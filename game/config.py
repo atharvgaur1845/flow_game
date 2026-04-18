@@ -12,8 +12,8 @@ WINDOWED_SIZE      = (1280, 800)
 # --- Player ---------------------------------------------------------------
 PLAYER_MAX_HP      = 100
 PLAYER_ACCEL       = 22.0      # base acceleration magnitude
-DASH_COOLDOWN      = 1.5       # seconds (baseline; shop upgrades scale it)
-DASH_INVULN        = 0.2
+DASH_COOLDOWN      = 2.5       # seconds (baseline; shop upgrades scale it)
+DASH_INVULN        = 1.0       # full second of i-frames + dashing window
 DASH_IMPULSE       = 4.0
 HIT_INVULN         = 0.5
 DAMAGE_ON_HIT      = 10

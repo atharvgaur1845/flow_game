@@ -57,7 +57,10 @@ W_TOTAL = W_HIST + W_FUT
 EMA_ALPHA = 0.02
 APM_DECAY = 0.95
 MAX_ENEMIES = gcfg.MAX_ENEMIES
-WORLD_HALF = 10.0
+WORLD_HALF = 16.0
+DASH_TRAIL_TTL = 1.6          # seconds the kill-trail lingers after dash
+DASH_TRAIL_RADIUS = 0.55      # collision radius for trail segments
+DASH_TRAIL_MAX = 32           # uniform-array cap, must match shader
 
 ARCH_AROUSAL, ARCH_TACTICAL, ARCH_OVERLOAD, ARCH_FLOW, ARCH_APATHY = 0, 1, 2, 3, 4
 
@@ -108,6 +111,11 @@ uniform float u_boss_hp_frac;
 uniform vec2  u_shake;
 uniform float u_player_flash;   // dash i-frames
 uniform float u_hit_flash;      // took damage
+uniform float u_dash_phase;     // 0 idle .. 1 dash start
+uniform vec2  u_dash_dir;       // unit vector of current/last dash
+uniform vec2  u_dash_trail[32]; // lethal dash-trail waypoints (world)
+uniform float u_dash_trail_a[32]; // per-point alpha (1 = fresh, 0 = expired)
+uniform int   u_dash_trail_count;
 
 float sdCircle(vec2 p, float r) { return length(p) - r; }
 float hash21(vec2 p) {
@@ -121,15 +129,66 @@ vec2 screenToWorld(vec2 uv) {
     return (ndc * u_world_half) / u_cam_zoom;
 }
 
+// SDF for a 2D line segment.
+float sdSegment(vec2 p, vec2 a, vec2 b) {
+    vec2 pa = p - a;
+    vec2 ba = b - a;
+    float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
+    return length(pa - ba * h);
+}
+
 vec3 sampleScene(vec2 world) {
     vec2 g = world * 0.5;
     float grid = 0.0;
     grid += smoothstep(0.04, 0.0, abs(fract(g.x + u_time * 0.05) - 0.5) - 0.48);
     grid += smoothstep(0.04, 0.0, abs(fract(g.y - u_time * 0.03) - 0.5) - 0.48);
-    vec3 bg = mix(vec3(0.02, 0.02, 0.05),
-                  vec3(0.04, 0.06, 0.12),
+    // Background tint driven by the inferred psychological mixture.
+    // Each archetype contributes its own aesthetic palette; the dominant
+    // state shifts the entire arena's mood without overpowering the scene.
+    vec3 bg_tint = vec3(0.55, 0.12, 0.18) * u_pi_top4.x   // arousal: ember red
+                 + vec3(0.08, 0.22, 0.55) * u_pi_top4.y   // tactical: deep blue
+                 + vec3(0.42, 0.08, 0.55) * u_pi_top4.z   // overload: violet
+                 + vec3(0.05, 0.45, 0.40) * u_pi_top4.w;  // flow: teal
+    vec3 bg_low  = vec3(0.02, 0.02, 0.05) + bg_tint * 0.18;
+    vec3 bg_high = vec3(0.04, 0.06, 0.12) + bg_tint * 0.55;
+    vec3 bg = mix(bg_low, bg_high,
                   smoothstep(u_world_half, 0.0, length(world)));
-    vec3 col = bg + vec3(0.08, 0.15, 0.35) * grid;
+    vec3 grid_col = mix(vec3(0.08, 0.15, 0.35), bg_tint * 1.6, 0.45);
+    vec3 col = bg + grid_col * grid;
+
+    // Arena boundary: square box of half-size u_world_half, drawn as a
+    // glowing outline. Anything outside is heavily dimmed so the play
+    // area is unmistakable.
+    float bx = abs(world.x) - u_world_half;
+    float by = abs(world.y) - u_world_half;
+    float boundary_sdf = max(bx, by);
+    float outline = abs(boundary_sdf) - 0.10;
+    float outline_mask = smoothstep(0.08, 0.0, outline);
+    vec3 boundary_color = vec3(0.30, 0.85, 1.0)
+                        * (0.85 + 0.25 * sin(u_time * 2.5));
+    col += boundary_color * outline_mask * 1.4;
+    if (boundary_sdf > 0.0) {
+        col *= 0.18; // outside the arena: nearly black wash
+        col += vec3(0.05, 0.02, 0.08);
+    }
+
+    // Lethal dash trail (additive glow on the trail segments).
+    for (int i = 0; i < 32; ++i) {
+        if (i >= u_dash_trail_count) break;
+        float a = u_dash_trail_a[i];
+        if (a <= 0.0) continue;
+        vec2 tp = u_dash_trail[i];
+        float td;
+        if (i + 1 < u_dash_trail_count) {
+            td = sdSegment(world, tp, u_dash_trail[i + 1]);
+        } else {
+            td = length(world - tp);
+        }
+        float core = smoothstep(0.10, -0.04, td - 0.18);
+        float glow = exp(-max(td - 0.18, 0.0) * 3.0);
+        col += vec3(1.0, 0.85, 1.0) * core * a * 0.85;
+        col += vec3(0.7, 0.3, 1.0) * glow * a * 0.35;
+    }
 
     // Player.
     float dp = sdCircle(world - u_player, 0.45);
@@ -138,8 +197,43 @@ vec3 sampleScene(vec2 world) {
     vec3 player_tint = mix(vec3(0.2, 0.9, 1.0),
                            vec3(1.0, 1.0, 1.0),
                            u_player_flash);
-    col += player_tint * player_core;
+    col += player_tint * player_core * (1.0 + 0.6 * u_dash_phase);
     col += vec3(0.1, 0.6, 1.0) * player_glow * 0.45;
+
+    // --- Trippy "killer" dash effect (purely cosmetic, no hitbox change).
+    if (u_dash_phase > 0.0) {
+        // 1. Echo trail behind the dash direction.
+        for (int i = 1; i <= 4; ++i) {
+            float t = float(i) / 4.0;
+            vec2 echo_center = u_player - u_dash_dir * t * 0.9;
+            float de = sdCircle(world - echo_center, 0.45 * (1.0 - 0.18 * t));
+            float ae = (1.0 - t) * u_dash_phase;
+            float emask = smoothstep(0.04, -0.02, de);
+            col += vec3(0.6, 1.0, 1.0) * emask * ae * 0.55;
+        }
+        // 2. 4-arm spinning blade SDF around the player.
+        vec2 lp = world - u_player;
+        float ang = u_time * 14.0;
+        float blade = 1e9;
+        for (int k = 0; k < 4; ++k) {
+            float a = ang + float(k) * 1.5707963;
+            vec2 r = vec2(cos(a), sin(a));
+            vec2 q = vec2(dot(lp, r), dot(lp, vec2(-r.y, r.x)));
+            float d = abs(q.y) - 0.04;
+            d = max(d, q.x - 0.95);
+            d = max(d, -q.x);
+            blade = min(blade, d);
+        }
+        float blade_mask = smoothstep(0.02, -0.01, blade) * u_dash_phase;
+        vec3 blade_tint = mix(vec3(0.4, 1.0, 1.0), vec3(1.0, 0.4, 1.0),
+                              0.5 + 0.5 * sin(u_time * 9.0));
+        col += blade_tint * blade_mask * 1.4;
+        // 3. Outer ripple ring that pulses outward during dash.
+        float ring_r = 0.55 + (1.0 - u_dash_phase) * 0.6;
+        float ring = abs(length(lp) - ring_r) - 0.03;
+        col += vec3(1.0, 0.8, 1.0)
+               * smoothstep(0.04, 0.0, ring) * u_dash_phase * 0.6;
+    }
 
     // Enemies.
     float pulse = 0.85 + 0.15 * sin(u_time * 4.0);
@@ -380,6 +474,12 @@ class Player:
     invuln: float           = 0.0
     dashing: float          = 0.0
     hit_flash: float        = 0.0
+    input_dir: List[float]  = field(default_factory=lambda: [0.0, 0.0])
+    dash_dir: List[float]   = field(default_factory=lambda: [1.0, 0.0])
+    # Lethal dash-trail waypoints: each entry is (x, y, expires_at_seconds).
+    # Enemies whose centre falls within DASH_TRAIL_RADIUS of any consecutive
+    # segment are instantly killed.
+    dash_trail: list        = field(default_factory=list)
 
 
 # ============================================================================
@@ -483,6 +583,8 @@ def run_game(windowed: bool = False) -> int:
         "u_pi_top4",
         "u_boss_active", "u_boss_pos", "u_boss_radius", "u_boss_hp_frac",
         "u_shake", "u_player_flash", "u_hit_flash",
+        "u_dash_phase", "u_dash_dir",
+        "u_dash_trail", "u_dash_trail_a", "u_dash_trail_count",
     )}
 
     ui = UIOverlay(width, height)
@@ -595,13 +697,25 @@ def run_game(windowed: bool = False) -> int:
         # -----------------------------------------------------------------
         if state in (GameState.PLAYING, GameState.BOSS):
             # --- Input + physics -----------------------------------------
-            ax = (keys[pygame.K_d] - keys[pygame.K_a]) * gcfg.PLAYER_ACCEL
-            ay = (keys[pygame.K_w] - keys[pygame.K_s]) * gcfg.PLAYER_ACCEL
-            if abs(ax) > 0.1 or abs(ay) > 0.1:
-                n = math.hypot(ax, ay) + 1e-6
-                player.facing = [ax / n, ay / n]
+            # Read raw WASD as a vector and normalize so diagonal isn't faster.
+            raw_ix = float(keys[pygame.K_d] - keys[pygame.K_a])
+            raw_iy = float(keys[pygame.K_w] - keys[pygame.K_s])
+            ilen = math.hypot(raw_ix, raw_iy)
+            if ilen > 1e-6:
+                tgt_ix, tgt_iy = raw_ix / ilen, raw_iy / ilen
+                player.facing = [tgt_ix, tgt_iy]
+            else:
+                tgt_ix = tgt_iy = 0.0
+            # Critically-damped lerp toward the target input direction so brief
+            # key flicker is smoothed but the response stays snappy (~3 frames).
+            lerp = min(1.0, dt * 18.0)
+            player.input_dir[0] += (tgt_ix - player.input_dir[0]) * lerp
+            player.input_dir[1] += (tgt_iy - player.input_dir[1]) * lerp
+            ix, iy = player.input_dir
+            ax = ix * gcfg.PLAYER_ACCEL
+            ay = iy * gcfg.PLAYER_ACCEL
 
-            abilities.try_dash(player, keys, pygame)
+            abilities.try_dash(player, keys, pygame, (raw_ix, raw_iy))
 
             friction = float(max(E[2].item(), 0.05))
             player.vel[0] += ax * dt
@@ -609,12 +723,41 @@ def run_game(windowed: bool = False) -> int:
             damp = math.exp(-friction * dt)
             player.vel[0] *= damp
             player.vel[1] *= damp
-            player.pos[0] = max(-WORLD_HALF, min(WORLD_HALF,
-                                                 player.pos[0] + player.vel[0] * dt))
-            player.pos[1] = max(-WORLD_HALF, min(WORLD_HALF,
-                                                 player.pos[1] + player.vel[1] * dt))
+            # Boundary bounce (no sticking): reflect the velocity component
+            # that crossed the wall and mirror the overshoot back inside.
+            BOUNCE_DAMP = 0.78
+            new_x = player.pos[0] + player.vel[0] * dt
+            new_y = player.pos[1] + player.vel[1] * dt
+            if new_x >  WORLD_HALF:
+                new_x = WORLD_HALF - (new_x -  WORLD_HALF)
+                player.vel[0] = -abs(player.vel[0]) * BOUNCE_DAMP
+            elif new_x < -WORLD_HALF:
+                new_x = -WORLD_HALF + (-WORLD_HALF - new_x)
+                player.vel[0] =  abs(player.vel[0]) * BOUNCE_DAMP
+            if new_y >  WORLD_HALF:
+                new_y = WORLD_HALF - (new_y -  WORLD_HALF)
+                player.vel[1] = -abs(player.vel[1]) * BOUNCE_DAMP
+            elif new_y < -WORLD_HALF:
+                new_y = -WORLD_HALF + (-WORLD_HALF - new_y)
+                player.vel[1] =  abs(player.vel[1]) * BOUNCE_DAMP
+            player.pos[0] = max(-WORLD_HALF, min(WORLD_HALF, new_x))
+            player.pos[1] = max(-WORLD_HALF, min(WORLD_HALF, new_y))
             abilities.update_timers(player, dt)
             player.hit_flash = max(0.0, player.hit_flash - dt * 3.0)
+
+            # --- Lethal dash trail bookkeeping --------------------------
+            now_t = time.time() - t_start
+            if player.dashing > 0.0:
+                # Append a waypoint roughly every dt; dedupe if barely moved.
+                if (not player.dash_trail
+                    or math.hypot(player.pos[0] - player.dash_trail[-1][0],
+                                  player.pos[1] - player.dash_trail[-1][1]) > 0.15):
+                    player.dash_trail.append(
+                        (player.pos[0], player.pos[1], now_t + DASH_TRAIL_TTL))
+            # Prune expired and cap length.
+            player.dash_trail = [pt for pt in player.dash_trail if pt[2] > now_t]
+            if len(player.dash_trail) > DASH_TRAIL_MAX:
+                player.dash_trail = player.dash_trail[-DASH_TRAIL_MAX:]
 
             obs.tick_apm()
 
@@ -637,6 +780,26 @@ def run_game(windowed: bool = False) -> int:
 
             # --- Collisions ----------------------------------------------
             dashing = player.dashing > 0.0
+            trail = player.dash_trail
+            trail_active = len(trail) >= 1
+
+            def _killed_by_trail(ex: float, ey: float, er: float) -> bool:
+                if not trail_active:
+                    return False
+                for j in range(len(trail) - 1):
+                    ax_, ay_, _ = trail[j]
+                    bx_, by_, _ = trail[j + 1]
+                    pax, pay = ex - ax_, ey - ay_
+                    bax, bay = bx_ - ax_, by_ - ay_
+                    ab2 = bax * bax + bay * bay + 1e-9
+                    h = max(0.0, min(1.0, (pax * bax + pay * bay) / ab2))
+                    cx, cy = ax_ + h * bax, ay_ + h * bay
+                    if math.hypot(ex - cx, ey - cy) < (DASH_TRAIL_RADIUS + er):
+                        return True
+                # Single-point trail still counts as a kill zone.
+                ax_, ay_, _ = trail[-1]
+                return math.hypot(ex - ax_, ey - ay_) < (DASH_TRAIL_RADIUS + er)
+
             survivors: List[Enemy] = []
             for e in enemies:
                 d = math.hypot(e.pos[0] - player.pos[0],
@@ -652,6 +815,10 @@ def run_game(windowed: bool = False) -> int:
                             player.invuln = gcfg.HIT_INVULN
                             player.hit_flash = 1.0
                     e.contact_cd = e.contact_cd_max
+                # Trail kill: any enemy whose body intersects a recent dash
+                # segment dies instantly, even after the dash itself ended.
+                if e.hp > 0 and _killed_by_trail(e.pos[0], e.pos[1], e.radius):
+                    e.hp = 0
                 if e.hp > 0:
                     survivors.append(e)
                 else:
@@ -752,6 +919,25 @@ def run_game(windowed: bool = False) -> int:
         glUniform2f(U["u_shake"], sx, sy)
         glUniform1f(U["u_player_flash"], min(1.0, player.dashing * 5.0))
         glUniform1f(U["u_hit_flash"], player.hit_flash)
+        dash_phase = (player.dashing / gcfg.DASH_INVULN
+                      if gcfg.DASH_INVULN > 0 else 0.0)
+        glUniform1f(U["u_dash_phase"], max(0.0, min(1.0, dash_phase)))
+        glUniform2f(U["u_dash_dir"],
+                    float(player.dash_dir[0]), float(player.dash_dir[1]))
+
+        # Dash trail uniforms: positions packed flat + per-point alpha.
+        trail_pos = np.zeros(DASH_TRAIL_MAX * 2, dtype=np.float32)
+        trail_a   = np.zeros(DASH_TRAIL_MAX,     dtype=np.float32)
+        now_t = time.time() - t_start
+        for ti, (tx, ty, te) in enumerate(player.dash_trail[:DASH_TRAIL_MAX]):
+            trail_pos[2 * ti]     = tx
+            trail_pos[2 * ti + 1] = ty
+            ttl_left = max(0.0, te - now_t)
+            trail_a[ti] = min(1.0, ttl_left / DASH_TRAIL_TTL)
+        glUniform2fv(U["u_dash_trail"],   DASH_TRAIL_MAX, trail_pos)
+        glUniform1fv(U["u_dash_trail_a"], DASH_TRAIL_MAX, trail_a)
+        glUniform1i(U["u_dash_trail_count"],
+                    min(len(player.dash_trail), DASH_TRAIL_MAX))
 
         glBindVertexArray(vao)
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4)
