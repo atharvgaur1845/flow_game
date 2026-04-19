@@ -1,3 +1,7 @@
 __pycache__/
 *.pyc
-*.pyd   
+*.pyd  
+./game/__pycache__/
+./game/*.pyc
+./game/*.pyd
+./game/assets/__pycache__/

@@ -569,7 +569,9 @@ Questions or ideas? Reach out or open an issue in the project repository.
 ---
 
 **Enjoy the Flow!** 🌊✨
-
+**Contributors-
+Atharv Sharma
+Shoyam Mishra**
 ---
 
 *Last Updated: April 2026*
