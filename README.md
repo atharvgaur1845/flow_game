@@ -1,5 +1,8 @@
 # Flow Game — Psychological Adaptation Engine + Roguelite Arena
-##**Ideated at 3AM by (no regrets) Atharv Sharma|Shoyam Mishra**
+## **Ideated at 3AM by Atharv Sharma|Shoyam Mishra**
+
+![Flow Game Gameplay](simplescreenrecorder-2026-04-20_04.16.07%20(online-video-cutter.com).gif)
+
 A revolutionary 2D roguelite game that dynamically adapts to your psychological state in real-time using a **non-causal attention model** and **disentangled visual latents**. Built with PyTorch, Pygame, and advanced GLSL shaders.
 
 ## 📋 Table of Contents
