@@ -47,9 +47,36 @@ def _spawn_at_perimeter(player_pos, world_half: float) -> Tuple[float, float, fl
     return x, y, dx / n, dy / n
 
 
+def _safe_perimeter_spawn(player_pos, world_half: float,
+                          min_dist: float = config.ENEMY_MIN_SPAWN_DIST,
+                          max_tries: int = 12):
+    """Pick a perimeter spawn that is at least `min_dist` from the player.
+
+    If we can't find one within `max_tries` (player camping the wall),
+    fall back to the antipode of the player projected onto the perimeter
+    so the spawn is mathematically as far as possible.
+    """
+    best = None
+    for _ in range(max_tries):
+        x, y, ux, uy = _spawn_at_perimeter(player_pos, world_half)
+        d = math.hypot(x - player_pos[0], y - player_pos[1])
+        if d >= min_dist:
+            return x, y, ux, uy
+        best = (x, y, ux, uy, d) if best is None or d > best[4] else best
+    if best is not None:
+        return best[0], best[1], best[2], best[3]
+    # Final fallback: antipode of player projected to the perimeter.
+    pn = math.hypot(player_pos[0], player_pos[1]) + 1e-6
+    ax = -player_pos[0] / pn * world_half * 0.95
+    ay = -player_pos[1] / pn * world_half * 0.95
+    dx, dy = player_pos[0] - ax, player_pos[1] - ay
+    n = math.hypot(dx, dy) + 1e-6
+    return ax, ay, dx / n, dy / n
+
+
 def make_enemy(kind: str, player_pos, world_half: float) -> Enemy:
     s = config.ENEMY_STATS[kind]
-    x, y, ux, uy = _spawn_at_perimeter(player_pos, world_half)
+    x, y, ux, uy = _safe_perimeter_spawn(player_pos, world_half)
     return Enemy(
         pos=[x, y],
         vel=[ux * s["speed"], uy * s["speed"]],
@@ -174,3 +201,48 @@ def step_boss(boss: Boss, player_pos, pi, world_half: float,
             kind = "fast" if random.random() < 0.5 else "chaser"
             minions.append(make_enemy(kind, player_pos, world_half))
         boss.minion_cd = config.BOSS_MINION_CD * (1.5 - float(pi[ARCH_OVERLOAD]))
+
+
+# ---------------------------------------------------------------------------
+# Pickups (food / power-ups)
+# ---------------------------------------------------------------------------
+PICKUP_KINDS = ("heal", "dash_boost", "speed_boost", "shield", "max_hp")
+# Stable integer codes for the shader (must match the GLSL switch).
+PICKUP_CODE = {k: i for i, k in enumerate(PICKUP_KINDS)}
+PICKUP_LABEL = {
+    "heal":         "+30 HP",
+    "dash_boost":   "BIG DASH",
+    "speed_boost":  "HASTE",
+    "shield":       "SHIELD",
+    "max_hp":       "+MAX HP",
+}
+PICKUP_BUFF_DURATION = {
+    # heal and max_hp are instant / handled separately; the rest are timed.
+    "dash_boost":  8.0,
+    "speed_boost": 8.0,
+    "shield":      5.0,
+    "max_hp":      12.0,
+}
+
+
+@dataclass
+class Pickup:
+    pos: List[float]
+    kind: str
+    radius: float = 0.45
+    spawn_time: float = 0.0
+
+
+def make_pickup(player_pos, world_half: float, kind: str | None = None,
+                min_dist: float = config.PICKUP_MIN_DIST) -> Pickup:
+    if kind is None:
+        kind = random.choice(PICKUP_KINDS)
+    # Drop somewhere inside the arena, not on top of the player.
+    for _ in range(20):
+        x = random.uniform(-world_half * 0.85, world_half * 0.85)
+        y = random.uniform(-world_half * 0.85, world_half * 0.85)
+        if math.hypot(x - player_pos[0], y - player_pos[1]) >= min_dist:
+            return Pickup(pos=[x, y], kind=kind, radius=config.PICKUP_RADIUS)
+    # Fallback: opposite side of the arena from the player.
+    return Pickup(pos=[-player_pos[0] * 0.7, -player_pos[1] * 0.7],
+                  kind=kind, radius=config.PICKUP_RADIUS)

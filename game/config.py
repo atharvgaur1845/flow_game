@@ -39,13 +39,21 @@ ENEMY_STATS = {
 }
 
 # --- Boss -----------------------------------------------------------------
-BOSS_HP             = 500
+BOSS_HP             = 220
 BOSS_RADIUS         = 1.2
-BOSS_CONTACT_DAMAGE = 20
-BOSS_DASH_DAMAGE    = 10
-BOSS_TELEPORT_CD    = 2.5
-BOSS_MINION_CD      = 3.5
+BOSS_CONTACT_DAMAGE = 12
+BOSS_DASH_DAMAGE    = 14
+BOSS_TELEPORT_CD    = 3.0
+BOSS_MINION_CD      = 4.5
 BOSS_ATTACK_CD      = 1.2
+
+# --- Pickups (food / power-ups) ------------------------------------------
+PICKUP_MAX_ACTIVE      = 6        # at most this many on the floor
+PICKUP_SHADER_CAP      = 8        # uniform-array size in fragment shader
+PICKUP_SPAWN_INTERVAL  = 7.0      # seconds between spawns
+PICKUP_RADIUS          = 0.45
+PICKUP_MIN_DIST        = 4.0      # away from the player at spawn
+ENEMY_MIN_SPAWN_DIST   = 5.5      # enemies never spawn closer than this
 
 # --- Scoring --------------------------------------------------------------
 SCORE_TIME_BASE    = 1.0       # points/sec baseline

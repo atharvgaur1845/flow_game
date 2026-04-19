@@ -35,7 +35,10 @@ from game import abilities
 from game import config as gcfg
 from game import entities_extra as eex
 from game import progression as prog
-from game.entities_extra import Boss, Enemy, make_enemy, pick_kind, step_boss, step_enemies
+from game.entities_extra import (
+    Boss, Enemy, Pickup, PICKUP_BUFF_DURATION, PICKUP_CODE, PICKUP_KINDS,
+    PICKUP_LABEL, make_enemy, make_pickup, pick_kind, step_boss, step_enemies,
+)
 from game.game_state import GameState
 from game.progression import (
     UPGRADES, RunState, apply_upgrade, pick_shop_choices,
@@ -61,6 +64,36 @@ WORLD_HALF = 16.0
 DASH_TRAIL_TTL = 1.6          # seconds the kill-trail lingers after dash
 DASH_TRAIL_RADIUS = 0.55      # collision radius for trail segments
 DASH_TRAIL_MAX = 32           # uniform-array cap, must match shader
+
+# Pickup buff effect magnitudes (mirrors entities_extra constants).
+SPEED_BOOST_MULT = 1.4
+MAX_HP_BONUS     = 25
+HEAL_AMOUNT      = 30
+
+
+def apply_pickup(p, player, now_t: float) -> str:
+    """Apply a Pickup to the player; return the on-screen label."""
+    k = p.kind
+    if k == "heal":
+        player.hp = min(player.max_hp, player.hp + HEAL_AMOUNT)
+    elif k == "max_hp":
+        if "max_hp" not in player.buffs:
+            player.max_hp += MAX_HP_BONUS
+            player.hp += MAX_HP_BONUS
+        player.buffs["max_hp"] = now_t + PICKUP_BUFF_DURATION["max_hp"]
+    else:  # dash_boost / speed_boost / shield
+        player.buffs[k] = now_t + PICKUP_BUFF_DURATION[k]
+    return PICKUP_LABEL[k]
+
+
+def decay_buffs(player, now_t: float) -> None:
+    """Remove expired buffs; revert reversible effects."""
+    expired = [k for k, exp in player.buffs.items() if exp <= now_t]
+    for k in expired:
+        if k == "max_hp":
+            player.max_hp = max(1.0, player.max_hp - MAX_HP_BONUS)
+            player.hp = min(player.hp, player.max_hp)
+        del player.buffs[k]
 
 ARCH_AROUSAL, ARCH_TACTICAL, ARCH_OVERLOAD, ARCH_FLOW, ARCH_APATHY = 0, 1, 2, 3, 4
 
@@ -116,6 +149,9 @@ uniform vec2  u_dash_dir;       // unit vector of current/last dash
 uniform vec2  u_dash_trail[32]; // lethal dash-trail waypoints (world)
 uniform float u_dash_trail_a[32]; // per-point alpha (1 = fresh, 0 = expired)
 uniform int   u_dash_trail_count;
+uniform vec2  u_pickups[8];     // food / power-up positions (world)
+uniform int   u_pickup_kinds[8]; // 0 heal,1 dash,2 speed,3 shield,4 max_hp
+uniform int   u_pickup_count;
 
 float sdCircle(vec2 p, float r) { return length(p) - r; }
 float hash21(vec2 p) {
@@ -135,6 +171,19 @@ float sdSegment(vec2 p, vec2 a, vec2 b) {
     vec2 ba = b - a;
     float h = clamp(dot(pa, ba) / max(dot(ba, ba), 1e-6), 0.0, 1.0);
     return length(pa - ba * h);
+}
+
+// SDF for a 2D rotated diamond (square rotated 45 deg) of radius r.
+float sdDiamond(vec2 p, float r) {
+    return (abs(p.x) + abs(p.y)) - r;
+}
+
+vec3 pickupColor(int kind) {
+    if (kind == 0) return vec3(0.30, 1.00, 0.45); // heal       — green
+    if (kind == 1) return vec3(0.30, 0.95, 1.00); // dash_boost — cyan
+    if (kind == 2) return vec3(1.00, 0.65, 0.20); // speed      — orange
+    if (kind == 3) return vec3(0.40, 0.55, 1.00); // shield     — blue
+    return                vec3(1.00, 0.95, 0.30); // max_hp     — yellow
 }
 
 vec3 sampleScene(vec2 world) {
@@ -188,6 +237,25 @@ vec3 sampleScene(vec2 world) {
         float glow = exp(-max(td - 0.18, 0.0) * 3.0);
         col += vec3(1.0, 0.85, 1.0) * core * a * 0.85;
         col += vec3(0.7, 0.3, 1.0) * glow * a * 0.35;
+    }
+
+    // Pickups: rotating diamond with a soft halo, colour-coded by kind.
+    for (int i = 0; i < 8; ++i) {
+        if (i >= u_pickup_count) break;
+        vec2 pp = u_pickups[i];
+        vec3 pc = pickupColor(u_pickup_kinds[i]);
+        // Rotate UVs around the pickup centre.
+        float t = u_time * 2.2 + float(i) * 0.7;
+        float ca = cos(t), sa = sin(t);
+        vec2 lp = world - pp;
+        vec2 rp = vec2(ca * lp.x - sa * lp.y,
+                       sa * lp.x + ca * lp.y);
+        float pulse = 0.42 + 0.06 * sin(u_time * 5.0 + float(i));
+        float dpkp  = sdDiamond(rp, pulse);
+        float coreP = smoothstep(0.04, -0.03, dpkp);
+        float glowP = exp(-max(dpkp, 0.0) * 3.5);
+        col += pc * coreP * 1.15;
+        col += pc * glowP * 0.55;
     }
 
     // Player.
@@ -480,6 +548,8 @@ class Player:
     # Enemies whose centre falls within DASH_TRAIL_RADIUS of any consecutive
     # segment are instantly killed.
     dash_trail: list        = field(default_factory=list)
+    # Active power-up buffs: kind -> expires_at_seconds.
+    buffs: dict             = field(default_factory=dict)
 
 
 # ============================================================================
@@ -542,6 +612,7 @@ def run_game(windowed: bool = False) -> int:
         glEnableVertexAttribArray, glVertexAttribPointer,
         glUseProgram, glGetUniformLocation,
         glUniform1f, glUniform1i, glUniform2f, glUniform2fv, glUniform1fv,
+        glUniform1iv,
         glUniform4f, glClear, glClearColor, glDrawArrays, glViewport,
         GL_ARRAY_BUFFER, GL_STATIC_DRAW, GL_FLOAT, GL_FALSE,
         GL_COLOR_BUFFER_BIT, GL_TRIANGLE_STRIP,
@@ -585,6 +656,7 @@ def run_game(windowed: bool = False) -> int:
         "u_shake", "u_player_flash", "u_hit_flash",
         "u_dash_phase", "u_dash_dir",
         "u_dash_trail", "u_dash_trail_a", "u_dash_trail_count",
+        "u_pickups", "u_pickup_kinds", "u_pickup_count",
     )}
 
     ui = UIOverlay(width, height)
@@ -606,14 +678,20 @@ def run_game(windowed: bool = False) -> int:
     E = torch.tensor([1.0, 0.5, 0.5, 1.0], device=DEVICE)
     c = torch.zeros(V_LATENT, device=DEVICE)
     spawn_accum = 0.0
+    pickups: List[Pickup] = []
+    pickup_timer = gcfg.PICKUP_SPAWN_INTERVAL * 0.4   # first one comes faster
+    pickup_msg: Tuple[str, float] = ("", 0.0)        # (label, expires_at)
 
     def reset_run() -> None:
-        nonlocal player, enemies, boss, run, spawn_accum
+        nonlocal player, enemies, boss, run, spawn_accum, pickups, pickup_timer, pickup_msg
         player = Player()
         enemies = []
         boss = None
         run = RunState()
         spawn_accum = 0.0
+        pickups = []
+        pickup_timer = gcfg.PICKUP_SPAWN_INTERVAL * 0.4
+        pickup_msg = ("", 0.0)
         run.start_next_room()
 
     def enter_shop() -> None:
@@ -621,10 +699,12 @@ def run_game(windowed: bool = False) -> int:
         shop_choices = pick_shop_choices(3)
 
     def start_next_room_or_shop() -> None:
-        nonlocal enemies, boss, spawn_accum, state
+        nonlocal enemies, boss, spawn_accum, state, pickups, pickup_timer
         enemies = []
         boss = None
         spawn_accum = 0.0
+        pickups = []
+        pickup_timer = gcfg.PICKUP_SPAWN_INTERVAL * 0.4
         if run.should_open_shop():
             enter_shop()
             state = GameState.SHOP
@@ -712,8 +792,9 @@ def run_game(windowed: bool = False) -> int:
             player.input_dir[0] += (tgt_ix - player.input_dir[0]) * lerp
             player.input_dir[1] += (tgt_iy - player.input_dir[1]) * lerp
             ix, iy = player.input_dir
-            ax = ix * gcfg.PLAYER_ACCEL
-            ay = iy * gcfg.PLAYER_ACCEL
+            speed_mult = SPEED_BOOST_MULT if "speed_boost" in player.buffs else 1.0
+            ax = ix * gcfg.PLAYER_ACCEL * speed_mult
+            ay = iy * gcfg.PLAYER_ACCEL * speed_mult
 
             abilities.try_dash(player, keys, pygame, (raw_ix, raw_iy))
 
@@ -723,25 +804,32 @@ def run_game(windowed: bool = False) -> int:
             damp = math.exp(-friction * dt)
             player.vel[0] *= damp
             player.vel[1] *= damp
-            # Boundary bounce (no sticking): reflect the velocity component
-            # that crossed the wall and mirror the overshoot back inside.
-            BOUNCE_DAMP = 0.78
+            # Boundary bounce (stable): clamp position to the wall and
+            # invert the *outward* velocity component once. We only flip
+            # the sign when the player is actually moving outward, which
+            # prevents the double-reflection jitter that happens when a
+            # high-velocity dash crosses the line on consecutive frames.
+            BOUNCE_DAMP = 0.55
             new_x = player.pos[0] + player.vel[0] * dt
             new_y = player.pos[1] + player.vel[1] * dt
             if new_x >  WORLD_HALF:
-                new_x = WORLD_HALF - (new_x -  WORLD_HALF)
-                player.vel[0] = -abs(player.vel[0]) * BOUNCE_DAMP
+                new_x = WORLD_HALF
+                if player.vel[0] > 0.0:
+                    player.vel[0] = -player.vel[0] * BOUNCE_DAMP
             elif new_x < -WORLD_HALF:
-                new_x = -WORLD_HALF + (-WORLD_HALF - new_x)
-                player.vel[0] =  abs(player.vel[0]) * BOUNCE_DAMP
+                new_x = -WORLD_HALF
+                if player.vel[0] < 0.0:
+                    player.vel[0] = -player.vel[0] * BOUNCE_DAMP
             if new_y >  WORLD_HALF:
-                new_y = WORLD_HALF - (new_y -  WORLD_HALF)
-                player.vel[1] = -abs(player.vel[1]) * BOUNCE_DAMP
+                new_y = WORLD_HALF
+                if player.vel[1] > 0.0:
+                    player.vel[1] = -player.vel[1] * BOUNCE_DAMP
             elif new_y < -WORLD_HALF:
-                new_y = -WORLD_HALF + (-WORLD_HALF - new_y)
-                player.vel[1] =  abs(player.vel[1]) * BOUNCE_DAMP
-            player.pos[0] = max(-WORLD_HALF, min(WORLD_HALF, new_x))
-            player.pos[1] = max(-WORLD_HALF, min(WORLD_HALF, new_y))
+                new_y = -WORLD_HALF
+                if player.vel[1] < 0.0:
+                    player.vel[1] = -player.vel[1] * BOUNCE_DAMP
+            player.pos[0] = new_x
+            player.pos[1] = new_y
             abilities.update_timers(player, dt)
             player.hit_flash = max(0.0, player.hit_flash - dt * 3.0)
 
@@ -758,6 +846,28 @@ def run_game(windowed: bool = False) -> int:
             player.dash_trail = [pt for pt in player.dash_trail if pt[2] > now_t]
             if len(player.dash_trail) > DASH_TRAIL_MAX:
                 player.dash_trail = player.dash_trail[-DASH_TRAIL_MAX:]
+
+            # --- Buffs (decay expired) -----------------------------------
+            decay_buffs(player, now_t)
+
+            # --- Pickup spawning -----------------------------------------
+            pickup_timer -= dt
+            if (pickup_timer <= 0.0
+                    and len(pickups) < gcfg.PICKUP_MAX_ACTIVE):
+                pickups.append(make_pickup(player.pos, WORLD_HALF))
+                pickup_timer = gcfg.PICKUP_SPAWN_INTERVAL
+
+            # --- Pickup collection ---------------------------------------
+            remaining_pickups: List[Pickup] = []
+            for p in pickups:
+                d = math.hypot(p.pos[0] - player.pos[0],
+                               p.pos[1] - player.pos[1])
+                if d < (p.radius + 0.45):
+                    label = apply_pickup(p, player, now_t)
+                    pickup_msg = (label, now_t + 1.6)
+                else:
+                    remaining_pickups.append(p)
+            pickups = remaining_pickups
 
             obs.tick_apm()
 
@@ -810,10 +920,15 @@ def run_game(windowed: bool = False) -> int:
                     else:
                         e.hp -= 1
                         if player.invuln <= 0.0:
-                            dmg = gcfg.DAMAGE_ON_HIT * run.damage_mult
-                            player.hp -= dmg
-                            player.invuln = gcfg.HIT_INVULN
-                            player.hit_flash = 1.0
+                            if "shield" in player.buffs:
+                                # Shield absorbs the hit: brief flash, no HP loss.
+                                player.hit_flash = 0.4
+                                player.invuln = 0.25
+                            else:
+                                dmg = gcfg.DAMAGE_ON_HIT * run.damage_mult
+                                player.hp -= dmg
+                                player.invuln = gcfg.HIT_INVULN
+                                player.hit_flash = 1.0
                     e.contact_cd = e.contact_cd_max
                 # Trail kill: any enemy whose body intersects a recent dash
                 # segment dies instantly, even after the dash itself ended.
@@ -834,10 +949,14 @@ def run_game(windowed: bool = False) -> int:
                         boss.hit_flash = 1.0
                     else:
                         if player.invuln <= 0.0:
-                            dmg = gcfg.BOSS_CONTACT_DAMAGE * run.damage_mult
-                            player.hp -= dmg
-                            player.invuln = gcfg.HIT_INVULN
-                            player.hit_flash = 1.0
+                            if "shield" in player.buffs:
+                                player.hit_flash = 0.4
+                                player.invuln = 0.3
+                            else:
+                                dmg = gcfg.BOSS_CONTACT_DAMAGE * run.damage_mult
+                                player.hp -= dmg
+                                player.invuln = gcfg.HIT_INVULN
+                                player.hit_flash = 1.0
                     boss.contact_cd = 0.4
                 if boss.hp <= 0:
                     # Boss defeated -> run.register_kill once, clear room.
@@ -939,6 +1058,18 @@ def run_game(windowed: bool = False) -> int:
         glUniform1i(U["u_dash_trail_count"],
                     min(len(player.dash_trail), DASH_TRAIL_MAX))
 
+        # Pickups uniform upload.
+        pcap = gcfg.PICKUP_SHADER_CAP
+        pickup_pos_flat = np.zeros(pcap * 2, dtype=np.float32)
+        pickup_kind_flat = np.zeros(pcap, dtype=np.int32)
+        for pi_, p_obj in enumerate(pickups[:pcap]):
+            pickup_pos_flat[2 * pi_]     = p_obj.pos[0]
+            pickup_pos_flat[2 * pi_ + 1] = p_obj.pos[1]
+            pickup_kind_flat[pi_] = PICKUP_CODE.get(p_obj.kind, 0)
+        glUniform2fv(U["u_pickups"], pcap, pickup_pos_flat)
+        glUniform1iv(U["u_pickup_kinds"], pcap, pickup_kind_flat)
+        glUniform1i(U["u_pickup_count"], min(len(pickups), pcap))
+
         glBindVertexArray(vao)
         glDrawArrays(GL_TRIANGLE_STRIP, 0, 4)
 
@@ -948,10 +1079,14 @@ def run_game(windowed: bool = False) -> int:
         elif state == GameState.PLAYING:
             goal = (f"Kill {run.room_kills_required - run.kills_in_room} more  "
                     f"·  {max(0.0, run.room_time_remaining):4.1f}s remaining")
-            ui.render_playing(player, run, pi, c, goal, boss=None)
+            ui.render_playing(player, run, pi, c, goal, boss=None,
+                              now_t=time.time() - t_start,
+                              pickup_msg=pickup_msg)
         elif state == GameState.BOSS:
             goal = f"Defeat the BOSS  ·  {max(0.0, run.room_time_remaining):4.1f}s"
-            ui.render_playing(player, run, pi, c, goal, boss=boss)
+            ui.render_playing(player, run, pi, c, goal, boss=boss,
+                              now_t=time.time() - t_start,
+                              pickup_msg=pickup_msg)
         elif state == GameState.SHOP:
             ui.render_shop(shop_choices, UPGRADES, run)
         elif state == GameState.GAME_OVER:

@@ -124,7 +124,8 @@ class UIOverlay:
                        (220, 200, 140))
 
     def render_playing(self, player, run, pi, c_vec, goal_text: str,
-                       *, boss=None) -> None:
+                       *, boss=None, now_t: float = 0.0,
+                       pickup_msg=("", 0.0)) -> None:
         self.surf.fill((0, 0, 0, 0))
         # HP
         self._text("HP", 24, 22)
@@ -174,6 +175,44 @@ class UIOverlay:
             x = (self.w - w) // 2
             self._text(f"BOSS — {boss.phase_label}", x, 14, (255, 160, 200), small=True)
             self._bar(x, 32, w, 16, boss.hp / max(boss.max_hp, 1), (255, 80, 140))
+
+        # Active buffs (left column, below the room goal).
+        if getattr(player, "buffs", None):
+            self._text("BUFFS", 24, 138, (200, 230, 200), small=True)
+            BUFF_COLOR = {
+                "heal":         (90, 230, 130),
+                "dash_boost":   (90, 230, 255),
+                "speed_boost":  (255, 170, 90),
+                "shield":       (130, 160, 255),
+                "max_hp":       (255, 230, 100),
+            }
+            BUFF_LABEL = {
+                "heal":         "HEAL",
+                "dash_boost":   "BIG DASH",
+                "speed_boost":  "HASTE",
+                "shield":       "SHIELD",
+                "max_hp":       "+MAX HP",
+            }
+            BUFF_DUR = {
+                "dash_boost": 8.0, "speed_boost": 8.0,
+                "shield": 5.0, "max_hp": 12.0,
+            }
+            row = 0
+            for kind, exp in player.buffs.items():
+                remain = max(0.0, exp - now_t)
+                col = BUFF_COLOR.get(kind, (200, 200, 200))
+                lbl = BUFF_LABEL.get(kind, kind.upper())
+                full = BUFF_DUR.get(kind, 8.0)
+                y = 158 + row * 22
+                self._text(f"{lbl}  {remain:4.1f}s", 24, y, col, small=True)
+                self._bar(180, y + 4, 120, 10, remain / full, col)
+                row += 1
+
+        # Pickup banner (centered top, fades over its TTL).
+        msg, exp = pickup_msg
+        if msg and now_t < exp:
+            self._text(f"+ {msg}", self.w // 2 - 80, 70,
+                       (255, 230, 140), big=True)
 
     def render_shop(self, choices, upgrade_list, run) -> None:
         self.surf.fill((0, 0, 0, 0))
