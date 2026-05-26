@@ -1,195 +1,153 @@
 # Flow Game — Psychological Adaptation Engine + Roguelite Arena
-## **Ideated at 3AM by Atharv Sharma|Shoyam Mishra**
+
+## **Ideated at 3AM by Atharv Sharma | Shoyam Mishra**
+## **RL Agent authored by Atharv Sharma**
 
 ![Flow Game Gameplay](simplescreenrecorder-2026-04-20_04.16.07%20(online-video-cutter.com).gif)
 
-A revolutionary 2D roguelite game that dynamically adapts to your psychological state in real-time using a **non-causal attention model** and **disentangled visual latents**. Built with PyTorch, Pygame, and advanced GLSL shaders.
+A 2D roguelite arena that **adapts in real-time to your psychological state** using a non-causal attention model and disentangled visual latents — and now ships with a **hierarchical reinforcement learning agent** that learns to play in any of the five psychological archetypes on command.
+
+---
 
 ## 📋 Table of Contents
 
-- [Overview](#overview)
-- [Features](#features)
-- [Installation](#installation)
-- [Quick Start](#quick-start)
-- [Game Mechanics](#game-mechanics)
-- [Controls](#controls)
-- [Architecture](#architecture)
-- [Configuration](#configuration)
-- [System Requirements](#system-requirements)
+### Game
+- [Overview](#-overview)
+- [Features](#-features)
+- [Installation](#-installation)
+- [Quick Start](#-quick-start)
+- [Game Mechanics](#-game-mechanics)
+- [Controls](#-controls)
+- [Architecture](#-architecture)
+- [Configuration](#-configuration)
+- [The Math](#-understanding-the-math)
+- [Visual Aesthetic](#-visual-aesthetic)
+- [System Requirements](#-system-requirements)
+
+### RL Agent
+- [RL Overview](#-rl-agent-overview)
+- [RL Architecture](#-rl-architecture)
+- [Observation Space](#-observation-space)
+- [Action Space](#-action-space)
+- [Reward Design](#-reward-design)
+- [Hierarchical Training](#-hierarchical-training)
+- [Training Guide](#-training-guide)
+- [Watching the Agent](#-watching-the-agent)
+- [RL Configuration](#-rl-configuration)
+- [Troubleshooting](#-troubleshooting)
+
+---
+
+# PART I — THE GAME
 
 ---
 
 ## 🎮 Overview
 
-Flow Game is a unique roguelite arena survival game where the environment and difficulty **adapt in real-time to your psychological state**. The game features:
+Flow Game is a roguelite arena survival game where the environment **adapts in real-time to your psychological state**. Every keypress, every movement, every hesitation is fed into a bidirectional attention model that infers which of five archetypes describes you right now — and the game world reshapes itself accordingly.
 
-- **Real-time psychological state inference** using a bidirectional attention model
-- **Emergent gameplay** that responds to your playing style (arousal, tactical thinking, cognitive overload, flow state, or apathy)
-- **Neon aesthetic** with mathematically-driven visuals powered by GLSL shaders
-- **Dynamic enemy types** that spawn based on your inferred state
-- **Boss encounters** with AI behavior driven by your psychology
-- **Roguelite progression** with shops, upgrades, and escalating difficulty
+- **Real-time psychological state inference** — bidirectional attention over 32-frame window
+- **Emergent gameplay** — responds to arousal, tactical thinking, cognitive overload, flow, or apathy
+- **Neon aesthetic** — mathematically-driven visuals via GLSL fragment shaders
+- **Dynamic enemy distribution** — spawn mix is biased by your inferred state
+- **Adaptive boss AI** — boss reads your `pi` mixture and changes tactics mid-fight
+- **Roguelite progression** — shops, upgrades, escalating difficulty
 
-### The Psychology Behind the Game
+### The Five Archetypes
 
-The backend tracks 5 psychological archetypes:
-1. **Arousal (ARCH_AROUSAL)** — Kinetic energy; high movement/actions per minute
-2. **Tactical (ARCH_TACTICAL)** — Calculated deliberation; precise positioning and strategy
-3. **Overload (ARCH_OVERLOAD)** — Cognitive saturation; system overwhelm
-4. **Flow (ARCH_FLOW)** — Optimal engagement; seamless skill-challenge balance
-5. **Apathy (ARCH_APATHY)** — Disengagement; low input activity
+The backend tracks your play as a probability distribution over five psychological states:
 
-Your playstyle automatically shifts this 5-dimensional mixture (`pi`), which then transforms:
-- **Physics parameters** (enemy speeds, spawn rates, friction, camera zoom)
-- **Visual distortions** (chromatic aberration, grain, geometric warp, bloom glow)
-- **Boss AI behavior** (pursuit vs. tactical positioning vs. minion summoning vs. teleportation)
-- **Enemy type distribution** (fast strikers, tanks, chasers appear based on your state)
+| Index | Archetype | Colour | Triggered By |
+|-------|-----------|--------|-------------|
+| 0 | **Arousal** | Ember red | Fast movement, high APM, close threats |
+| 1 | **Tactical** | Deep blue | Precise positioning, measured action rate |
+| 2 | **Overload** | Violet | Erratic direction changes, enemy swarms |
+| 3 | **Flow** | Teal | Smooth velocity, consistent engagement, rhythm |
+| 4 | **Apathy** | Grey | Low speed, low APM, long idle periods |
+
+This mixture `π` (sums to 1.0) continuously drives physics, visuals, enemy behaviour, and boss AI — without any scripted modes or difficulty levels.
 
 ---
 
 ## ✨ Features
 
-### Backend Features (Inference Engine)
-- **Non-causal Attention Model** — Bidirectional attention over historical keypresses (16 frames) + physics-projected future (16 frames)
-- **EMA Baseline Tracking** — Continuous adaptation to player's shifting baseline
-- **5-State Mixture Simplex** — Probabilistic inference of psychological state
-- **Environment Mapping** — Deterministic mapping of `pi` → physics (`E`) and visual latents (`c`)
-- **Real-time State Visualization** — 5 color-coded bars showing current archetype mixture
+### Backend — Inference Engine
+- **Non-Causal Attention** — bidirectional attention over 16 history frames + 16 physics-projected future frames
+- **EMA Baseline Tracking** — adapts to each player's individual baseline over time
+- **5-State Probability Simplex** — smooth, stable transitions; never jumps between states
+- **Deterministic Environment Mapper** — `π → (E physics params, c visual latents)` via hand-tuned matrix
+- **Live State Bars** — five colour-coded bars visible in the HUD at all times
 
-### Gameplay Features
+### Gameplay
 - **3 Enemy Archetypes**
-  - *Chaser*: Medium HP, medium speed, balanced threat
-  - *Fast*: Low HP, high speed, punishes loose play
-  - *Tank*: High HP, low speed, soaks damage
-- **Dynamic Boss Encounters** (every 5 rooms)
-  - Adaptive AI driven by player's inferred state
-  - Arousal → aggressive pursuit
-  - Tactical → precise range warfare
-  - Overload → minion summoning
-  - Flow → teleport flanking
-  - Apathy → passive slow threat
-- **Power-up System** (5 pickup types)
-  - Health restoration
-  - Dash burst (extended duration + cooldown reduction)
-  - Speed boost (temporary haste)
-  - Shield (temporary invulnerability)
-  - Max HP increase
-- **Dash Mechanic**
-  - 4× velocity impulse with invulnerability frames
-  - Lethal trail that damages enemies
-  - Direction priority: current input → velocity → last facing direction
-  - Cooldown scaling via shop upgrades
-- **Shop System** (every 3 rooms)
-  - More HP — +20 max HP, full heal
-  - Shorter Dash — -20% cooldown
-  - Score Boost — +0.25 multiplier bonus
-  - Slow Enemies — -15% enemy speed
-  - Damage Armor — -20% incoming damage
-- **Scoring System**
-  - Time-based: 1 pt/sec (scales with Flow state)
-  - Kill-based: 25 pts per kill (scales with archetype multiplier)
-  - Room clear: 250 pts
-  - Boss clear: 2000 pts
-- **Neon Visuals**
-  - Real-time procedural grid animation
-  - Dynamic background color tint responding to archetype mixture
-  - Glow effects on player, enemies, pickups, boss
-  - Dash echo trails with trippy blade effects
-  - Screen shake intensity driven by player's arousal
-  - Chromatic aberration during high-arousal states
-  - Smooth bloom/glow based on overload state
+  - *Chaser* — 2 HP, medium speed, balanced threat
+  - *Fast* — 1 HP, 2× speed, punishes loose positioning
+  - *Tank* — 4 HP, 0.55× speed, arena presence
+- **Boss Encounters** — every 5 rooms; 220 HP; only dash damage counts
+- **5 Pickup Types** — heal, dash boost, speed boost, shield, max HP
+- **Lethal Dash Trail** — segments persist 1.6 s; kill enemies on contact
+- **Shop System** — every 3 rooms; 5 upgrade types
+- **Scoring** — time-based + kill-based, both amplified by `π[Flow]`
 
-### Game Progression
-- **5-Room Cycles**: Alternate between combat rooms and boss rooms
-- **Escalating Difficulty**: Enemy speed and spawn rates increase per room
-- **Room Objectives**
-  - Normal rooms: Kill required enemies OR survive time limit
-  - Boss rooms: Defeat the boss to advance
-- **Game-Over Screen**: Shows final stats (score, time survived, max flow, rooms cleared)
+### Visuals
+- Procedural animated grid, tinted by archetype mixture
+- SDF circles for all entities, glow driven by bloom latent
+- Dash effects: echo trail, spinning blade, ripple ring
+- Post-process: chromatic aberration, film grain, UV warp, bloom — all derived from `c`
+- Screen shake amplitude driven by arousal
 
 ---
 
 ## 📦 Installation
 
 ### Prerequisites
-- **Python 3.8+**
-- **pip** (Python package manager)
-- **GPU** (optional, recommended for better performance; CUDA-compatible GPU recommended)
+- Python 3.8+
+- OpenGL 3.3-capable GPU (integrated is fine for the game)
+- CUDA-compatible NVIDIA GPU recommended for RL training
 
-### Step 1: Clone or Navigate to Project
+### Step 1 — Clone / Navigate
 ```bash
-cd /home/atharv/Desktop/projects/flow_game
+cd /path/to/flow_game
 ```
 
-### Step 2: Install Dependencies
-
-**Option A: Using pip (Recommended)**
-
+### Step 2 — Install Dependencies
 ```bash
 pip install -r requirements.txt
 ```
 
-This installs:
-- `pygame` — Game window, input handling, rendering
-- `PyOpenGL` — OpenGL bindings for shader-based rendering
-- `PyOpenGL_accelerate` — OpenGL acceleration
-- `torch` — PyTorch for the inference engine
-- `numpy` — Numerical computations
+Installs: `pygame`, `PyOpenGL`, `PyOpenGL_accelerate`, `torch`, `numpy`
 
-**Option B: Using conda (Alternative)**
-
+### Step 3 — CUDA (for RL training)
 ```bash
-conda create -n flow_game python=3.8
-conda activate flow_game
-pip install -r requirements.txt
-```
-
-### Step 3: GPU Acceleration (Optional)
-
-If you have an NVIDIA GPU and want to use CUDA for faster inference:
-
-```bash
-# For CUDA 11.8
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-
-# For CUDA 12.1
+# CUDA 12.1
 pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-
-# For CPU only (already installed, but if you need to reinforce)
-pip install torch torchvision torchaudio
+# CUDA 11.8
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 ```
 
 ---
 
 ## 🚀 Quick Start
 
-### Run the Game
-
-**Fullscreen Mode (Default)**
 ```bash
+# Fullscreen (default)
 python flow_game.py
-```
 
-**Windowed Mode**
-```bash
+# Windowed
 python flow_game.py --windowed
-```
 
-**Headless Invariant Check (No Window)**
-```bash
+# Headless invariant check (no window)
 python flow_game.py --probe
 ```
 
-### First Launch
-
-1. **Press ENTER** on the menu to start a new run
-2. **Use WASD** to move around the arena
-3. **Hold SPACE** to dash in the direction you're facing or moving
-4. **Collect pickups** (rotating diamonds) to gain temporary buffs
-5. **Survive enemy waves** to clear rooms
-6. **Every 3 rooms**: Shop appears; press **1/2/3** to pick an upgrade
-7. **Every 5 rooms**: Boss encounter; only your dash damages the boss
-8. **Reach high score** by staying in Flow state and clearing rooms efficiently
+### First Run
+1. **ENTER** — start run from menu
+2. **WASD** — move through the arena
+3. **SPACE** — dash (invulnerability + lethal trail)
+4. Collect rotating diamond pickups for buffs
+5. Kill required enemies to clear each room
+6. **1/2/3** at shops to pick upgrades
+7. Every 5th room: boss fight — only dashes deal damage
 
 ---
 
@@ -197,104 +155,107 @@ python flow_game.py --probe
 
 ### Psychological State Inference
 
-Your actions are constantly analyzed:
+Five features are extracted each frame and fed to the attention model:
 
-| Metric | Tracked Via | Effect |
-|--------|-------------|--------|
-| **Velocity** | Movement speed | Higher = more Arousal |
-| **APM (Actions/Min)** | Key presses | Higher = more Tactical or Arousal |
-| **Direction Variance** | Turn frequency | Higher = more Overload or Apathy |
-| **Threat Proximity** | Nearest enemy distance | Closer = Arousal or Tactical |
-| **Idle Time** | Stationary frames | Higher = Apathy |
+| Feature | Source | Drives |
+|---------|--------|--------|
+| `v_norm` | Movement speed magnitude | Arousal ↑ |
+| `apm_proxy` | Exponentially-decayed keypress rate | Arousal / Tactical ↑ |
+| `dir_variance` | Circular variance of recent headings | Overload ↑ |
+| `threat` | `1 / (1 + min_enemy_dist)` | Arousal / Tactical ↑ |
+| `idle_time` | Normalised stationary frames (0–120) | Apathy ↑ |
 
-The non-causal attention model processes these 5 observations over a 32-frame window (16 past + 16 future-projected) to produce a smooth, stable mixture (`pi`) that smoothly transitions between the 5 archetypes.
+The 32-frame non-causal attention produces `π = softmax(W_π @ mean(Z) + b_π)`.
 
-### Physics Mapping (M Matrix)
+### Physics Parameters (M Matrix)
 
-The inferred state drives physics:
+`E = M @ π + noise`
 
 | Parameter | Arousal | Tactical | Overload | Flow | Apathy |
 |-----------|---------|----------|----------|------|--------|
-| Enemy Speed | 1.8 | 0.6 | 1.4 | 1.2 | 0.3 |
-| Spawn Rate | 1.5 | 0.4 | 1.8 | 1.0 | 0.2 |
-| Friction | 0.3 | 0.9 | 0.7 | 0.2 | 1.0 |
-| Camera Zoom | 1.10 | 0.95 | 0.85 | 1.20 | 0.90 |
-
-**Example**: High Arousal → enemies spawn faster and move faster; camera zooms in (claustrophobic). High Flow → perfect enemy speed/spawn balance; camera zooms out for spatial awareness.
+| Enemy speed mult | 1.8 | 0.6 | 1.4 | 1.2 | 0.3 |
+| Spawn rate mult | 1.5 | 0.4 | 1.8 | 1.0 | 0.2 |
+| Player friction | 0.3 | 0.9 | 0.7 | 0.2 | 1.0 |
+| Camera zoom | 1.10 | 0.95 | 0.85 | 1.20 | 0.90 |
 
 ### Visual Latents (c)
 
-Four independent visual distortion parameters, each driven by archetype mixture:
-
-| Latent | Driven By | Effect |
-|--------|-----------|--------|
-| `c_1` Aberration | Arousal + Overload | RGB channel splitting; trippy effect |
-| `c_2` Grain | Tactical + Apathy | Film grain; grittiness |
-| `c_3` Warp | Flow | Sinusoidal UV distortion; wavy reality |
-| `c_4` Bloom | Flow + Arousal | Screen glow intensity; ethereal feel |
-
-### Boss AI Behavior
-
-Boss reads your `pi` and adapts:
-
-- **High Arousal** → Fast, aggressive pursuit; closes distance rapidly
-- **High Tactical** → Maintains ideal range (~4.5 units); precise, calculated movement
-- **High Overload** → Summons 1–3 minions every 4–6 seconds
-- **High Flow** → Teleports to flank player every 2–3 seconds
-- **High Apathy** → Slow, passive movement; low threat (represents system tiredness)
-
-### Enemy Type Spawning
-
-Enemy distribution is biased by archetype mixture:
-
-| Spawn Weight | Formula |
-|---|---|
-| Chaser | `1.0 + 1.5 × pi[Overload]` |
-| Fast | `0.5 + 2.0 × pi[Tactical] + 0.6 × pi[Arousal]` |
-| Tank | `0.3 + 1.8 × pi[Apathy]` |
-
-**Example**: High Tactical state → more Fast enemies (they reward precise play); High Apathy → more Tanks (slow, adds weight).
-
-### Scoring & Multipliers
-
-Each kill grants base 25 points × multiplier:
-
 ```
-Multiplier = 1.0 + 2.0 × pi[Flow] + shop_bonus
+c = W_c2 @ ReLU(W_c1 @ π)
 ```
 
-Time-based score (background accrual):
+| Latent | Driven By | Shader Effect |
+|--------|-----------|---------------|
+| `c[0]` | Arousal + Overload | Chromatic aberration |
+| `c[1]` | Tactical + Apathy | Film grain |
+| `c[2]` | Flow | Sinusoidal UV warp |
+| `c[3]` | Flow + Arousal | Additive bloom / glow |
+
+### Boss AI
+
+| Your Dominant State | Boss Behaviour |
+|--------------------|----------------|
+| Arousal | Fast aggressive pursuit; minimal ideal distance |
+| Tactical | Precise range warfare; hovers ~4.5 units away |
+| Overload | Spawns 1–3 minions every 4–6 seconds |
+| Flow | Teleport-flanks every 2–3 seconds |
+| Apathy | Slow, passive; low aggression |
+
+### Room Progression
+
+| Metric | Formula |
+|--------|---------|
+| Normal room time limit | `30 + room × 2` seconds |
+| Kills required | `8 + room × 3` |
+| Enemy speed scaling | `E[0] × (1 + 0.15 × room)` |
+| Spawn rate scaling | `E[1] × (1 + 0.22 × room)` |
+| Boss room time limit | `60 + room × 4` seconds |
+
+> **Rooms clear by kills only.** Running out of time without meeting the kill quota counts as death.
+
+### Scoring
 
 ```
-Points/sec = 1.0 × (1.0 + pi[Flow])
+kill_score   = 25 × (1.0 + 2.0 × π[Flow] + shop_bonus)
+time_score   = 1.0 × (1.0 + π[Flow])  pts/sec
+room_clear   = 250 pts
+boss_clear   = 2000 pts
 ```
+
+### Shop Upgrades
+
+| Upgrade | Effect |
+|---------|--------|
+| More HP | +20 max HP, full heal |
+| Shorter Dash | Cooldown ×0.8 (min 0.25 s) |
+| Score Boost | +0.25 score multiplier bonus |
+| Slow Enemies | Enemy speed ×0.85 |
+| Damage Armor | Incoming damage ×0.8 |
 
 ---
 
 ## 🎮 Controls
 
-| Input | Action |
-|-------|--------|
-| **WASD** | Move (accelerate) |
-| **SPACE** | Dash (invulnerability + lethal trail) |
-| **1 / 2 / 3** | Pick shop upgrade |
-| **ENTER** | Start run (menu) / Continue (game-over) |
-| **ESC** | Exit to menu (when in-game) |
+| Key | Action |
+|-----|--------|
+| **WASD** | Move |
+| **SPACE** | Dash |
+| **1 / 2 / 3** | Shop upgrade |
+| **ENTER** | Start / continue |
+| **ESC** | Quit |
+| **F1** | Debug overlay |
 
-### Movement Physics
+### Dash Details
 
-- Acceleration: 22 m/s² (configurable)
-- Friction: scales with `pi[Tactical]` (high = precise; low = slippery)
-- Velocity capped by arena boundaries (±16 units)
-
-### Dash Mechanics
-
-- **Cooldown**: 2.5 sec baseline (reduced by shop upgrade "Shorter Dash")
-- **Duration**: 1.0 sec i-frames + dashing window
-- **Impulse**: 4× velocity multiplier (6.0 m/s minimum)
-- **Dash Boost Pickup**: +40% impulse, +60% duration
-- **Direction**: Prioritizes (1) current input, (2) current velocity, (3) last facing
-- **Lethal Trail**: Segments remain for 1.6 sec; 0.55 unit collision radius
+| Property | Value |
+|----------|-------|
+| Cooldown | 2.5 s (baseline) |
+| Invulnerability | 0.4 s |
+| Minimum speed | 6.0 units/s |
+| Impulse multiplier | 4.0 × |
+| Trail TTL | 1.6 s |
+| Trail kill radius | 0.55 units |
+| Boss damage per dash | 14 HP |
 
 ---
 
@@ -302,277 +263,612 @@ Points/sec = 1.0 × (1.0 + pi[Flow])
 
 ```
 flow_game/
-├── flow_game.py                    # Backend inference engine + main loop
-├── requirements.txt
-├── init.md
-├── README.md (this file)
-└── game/
-    ├── __init__.py
-    ├── config.py                   # Tunable gameplay constants
-    ├── game_state.py               # GameState enum
-    ├── abilities.py                # Dash and timer mechanics
-    ├── entities_extra.py           # Enemy, Boss, Pickup entities
-    ├── progression.py              # Rooms, shop, upgrades, scoring
-    └── ui.py                       # HUD, shop menu, game-over screen
+├── flow_game.py          ← Backend inference engine + main game loop
+├── game/
+│   ├── config.py         ← All tunable gameplay constants
+│   ├── game_state.py     ← GameState: MENU / PLAYING / SHOP / BOSS / GAME_OVER
+│   ├── abilities.py      ← Dash logic and per-frame timer updates
+│   ├── entities_extra.py ← Enemy, Boss, Pickup dataclasses + AI
+│   ├── progression.py    ← RunState, room scaling, shop, scoring
+│   └── ui.py             ← HUD, shop menu, game-over overlay
+└── rl_agent/             ← See Part II
 ```
 
-### Layer Separation
+### Layer Contract
 
-**Backend (flow_game.py)** — UNTOUCHED by gameplay layer
-- `AttentionStateInference` — Non-causal bidirectional attention
-- `EnvironmentMapper` — Maps `pi` → physics + visual latents
-- `ObservationBuilder` — Converts keypresses → observation vector
-- Main loop: inference thread, shader uniform uploads, collision detection
+**Backend** (`flow_game.py`) — never modified by gameplay:
+- `AttentionStateInference` — produces `π`
+- `EnvironmentMapper` — maps `π → (E, c)`
+- `ObservationBuilder` — computes the 5-feature observation vector
 
-**Game Layer (game/)** — ONLY READS `pi, E, c`
-- Manages rooms, shops, boss, enemies, scoring
-- Scales physics outputs: `E' = E × (1 + room_scale)`
-- Interprets outputs: "If `pi[OVERLOAD]` is high, spawn more Tanks"
-- Never modifies backend, never injects fake states
-
-### Shader System
-
-**Vertex Shader**: Simple fullscreen quad
-
-**Fragment Shader** (~900 lines):
-- SDF circles for player, enemies, boss, pickups
-- Animated grid background with archetype-driven tint
-- Dash trail segments with additive glow
-- Dash visual effects: echo trails, spinning blades, ripple ring
-- Chromatic aberration, film grain, UV warp, bloom glow
-- Dynamic color mapping per pickup type (heal=green, dash=cyan, speed=orange, shield=blue, max_hp=yellow)
-- Dynamic HP ring around boss
+**Game layer** (`game/`) — only *reads* `π, E, c`:
+- Scales outputs: `E' = E × (1 + room_scale)`
+- Interprets outputs: "high `π[Overload]` → spawn more chasers"
+- Never writes to backend state
 
 ---
 
 ## ⚙️ Configuration
 
-All gameplay constants are tunable in [game/config.py](game/config.py):
+All constants live in [game/config.py](game/config.py):
 
-### Display
 ```python
-FULLSCREEN = True           # False for windowed
-WINDOWED_SIZE = (1280, 800)
-```
+# Player
+PLAYER_MAX_HP   = 100
+DASH_COOLDOWN   = 2.5       # seconds
+DASH_INVULN     = 0.4       # i-frame window
+DAMAGE_ON_HIT   = 15
 
-### Player Stats
-```python
-PLAYER_MAX_HP = 100
-PLAYER_ACCEL = 22.0
-DASH_COOLDOWN = 2.5         # seconds
-DASH_INVULN = 1.0           # i-frames duration
-DASH_IMPULSE = 4.0
-DAMAGE_ON_HIT = 10
-```
+# Rooms
+ROOM_BASE_KILLS = 8
+ROOM_KILL_STEP  = 3         # +per room
+ENEMY_SCALE_SPEED = 0.15    # +15% per room
+ENEMY_SCALE_SPAWN = 0.22    # +22% per room
 
-### Difficulty
-```python
-ROOM_BASE_TIME = 20.0       # seconds
-ROOM_TIME_STEP = 3.0        # +seconds per room
-ENEMY_SCALE_SPEED = 0.10    # +10% per room
-ENEMY_SCALE_SPAWN = 0.15    # +15% per room
-```
+# Boss
+BOSS_HP             = 220
+BOSS_DASH_DAMAGE    = 14
 
-### Enemy Stats
-```python
-ENEMY_STATS = {
-    "chaser": dict(hp=2, speed=1.0, radius=0.38),
-    "fast":   dict(hp=1, speed=2.0, radius=0.28),
-    "tank":   dict(hp=4, speed=0.55, radius=0.55),
-}
-```
-
-### Boss
-```python
-BOSS_HP = 220
-BOSS_RADIUS = 1.2
-BOSS_CONTACT_DAMAGE = 12
-BOSS_DASH_DAMAGE = 14
-```
-
-### Pickups
-```python
-PICKUP_MAX_ACTIVE = 6
-PICKUP_SPAWN_INTERVAL = 7.0
-PICKUP_BUFF_DURATION = {
-    "dash_boost":  8.0,
-    "speed_boost": 8.0,
-    "shield":      5.0,
-    "max_hp":      12.0,
-}
-```
-
-### Scoring
-```python
-SCORE_TIME_BASE = 1.0       # points/sec
-SCORE_KILL_BASE = 25        # per kill
+# Scoring
+SCORE_KILL_BASE  = 25
 SCORE_ROOM_CLEAR = 250
 SCORE_BOSS_CLEAR = 2000
 ```
 
 ---
 
-## 🔧 System Requirements
-
-### Minimum
-- **CPU**: Intel i5 / AMD Ryzen 5 or equivalent
-- **RAM**: 4 GB
-- **GPU**: Any with OpenGL 3.3+ support (integrated is OK)
-- **Python**: 3.8+
-
-### Recommended
-- **CPU**: Intel i7 / AMD Ryzen 7 or equivalent
-- **RAM**: 8 GB
-- **GPU**: NVIDIA GTX 1080 / RTX 3060 or equivalent (for CUDA acceleration)
-- **Python**: 3.10+
-
-### Tested Platforms
-- **Linux**: Ubuntu 20.04+, Fedora 35+
-- **macOS**: 11.0+ (may require CPU fallback)
-- **Windows**: 10, 11 (with Visual C++ Runtime installed)
-
----
-
-## 🎓 Understanding the Math
+## 🔬 Understanding the Math
 
 ### The 5-Simplex
 
-Archetypes lie on a 4-dimensional hyperplane (5D simplex):
 ```
-π_arousal + π_tactical + π_overload + π_flow + π_apathy = 1.0
-0 ≤ π_k ≤ 1.0 for all k
+π_0 + π_1 + π_2 + π_3 + π_4 = 1.0,    0 ≤ π_k ≤ 1
 ```
 
-Result: Smooth, continuous transitions between psychological states.
+Smooth, continuous transitions — no hard mode switches.
 
-### Non-Causal Attention
+### Non-Causal Self-Attention
 
-Bidirectional attention allows the model to:
-- **Learn temporal patterns** from recent keypresses
-- **Project future behavior** based on inertia and observations
-- **Stabilize inference** with a 1-second feedback window (32 frames @ 30fps)
-
-Formula:
 ```
-Q, K, V = O @ W_Q, O @ W_K, O @ W_V
-A = softmax((Q @ K^T) / √d_k)
-Z = A @ V
-π = softmax(W_π @ mean(Z) + b_π)
+O  = [history(16) | future_projection(16)]   shape: (32, 5)
+Q, K, V = O @ W_Q,  O @ W_K,  O @ W_V
+A  = softmax( Q @ K^T / √d_k )
+Z  = A @ V
+π  = softmax( W_π @ mean(Z, dim=0) + b_π )
 ```
+
+The future projection extrapolates velocity decay and idle growth — giving the model non-causal "foresight" without any lookahead into actual future inputs.
 
 ### Environment Mapping
 
-Deterministic, hand-tuned matrix `M` (4×5):
 ```
-E = M @ π + N(0, 0.02²)
-```
-
-Each row of `M` tunes a different aspect of the game world (speed, spawn, friction, zoom).
-
-### Visual Latents (β-VAE-Inspired)
-
-Sparse decoder architecture ensures _disentanglement_:
-```
+E = M @ π + ε,    ε ~ N(0, 0.02²)
 c = W_c2 @ ReLU(W_c1 @ π)
 ```
 
-Result: Each latent (`c_1`, `c_2`, `c_3`, `c_4`) independently controls a visual aspect, with minimal cross-talk.
+`M` is a fixed 4×5 hand-tuned matrix. `W_c1` and `W_c2` are sparse by design, ensuring each visual latent is driven by at most one or two archetypes (disentanglement).
+
+---
+
+## 🎨 Visual Aesthetic
+
+| State | Background | Post-Process |
+|-------|-----------|--------------|
+| Arousal | Ember red grid | Strong aberration, screen shake |
+| Tactical | Deep navy blue | Clean, minimal distortion |
+| Overload | Chaotic violet | Heavy grain + sinusoidal warp |
+| Flow | Glowing teal | Smooth bloom, slight zoom |
+| Apathy | Muted grey | Flat, low contrast |
+
+---
+
+## 🔧 System Requirements
+
+| | Minimum | Recommended |
+|-|---------|-------------|
+| CPU | i5 / Ryzen 5 | i7 / Ryzen 7 |
+| RAM | 4 GB | 8 GB |
+| GPU | OpenGL 3.3 (integrated OK) | NVIDIA RTX 3060+ (CUDA) |
+| Python | 3.8+ | 3.10+ |
+| OS | Linux / macOS / Windows 10 | Ubuntu 22.04 / Windows 11 |
+
+---
+---
+
+# PART II — THE RL AGENT
+
+> **Author: Atharv Sharma**
+
+---
+
+## 🤖 RL Agent Overview
+
+A custom **hierarchical reinforcement learning agent** trained with hand-written PPO (no external RL library) that learns to play the game while maintaining a specified psychological archetype.
+
+**Core idea**: the game's inference engine already measures `π` from the player's behaviour. The RL agent is trained to simultaneously **maximise game score** and **keep `π[target]` high** — so telling it "play in Flow state" produces an agent that moves smoothly, engages consistently, and scores efficiently, because that is exactly what the game's psychological model measures as Flow.
+
+### What it can do
+
+- Be told "play in Flow / Arousal / Tactical / Overload / Apathy" and exhibit the corresponding behaviour
+- Clear rooms, fight bosses, and make shop decisions autonomously
+- Switch target archetypes mid-run as difficulty changes
+- Be watched in real-time while training continues in a separate process
+- Scale from a single RTX 4060 to an A6000 by changing one config value
+
+---
+
+## 🏗️ RL Architecture
+
+```
+flow_game/
+└── rl_agent/
+    ├── config.py          ← All RL hyperparameters (single source of truth)
+    ├── env.py             ← Headless FlowGameEnv — full game logic, no rendering
+    ├── rewards.py         ← Reward function (score + alignment + survival)
+    ├── models.py          ← LowLevelPolicy and MetaPolicy neural networks
+    ├── ppo.py             ← RolloutBuffer + PPOTrainer (GAE, clipped objective)
+    ├── hierarchical.py    ← HierarchicalTrainer + ParallelEnvs (worker processes)
+    ├── train.py           ← CLI training entry point
+    ├── watch.py           ← Live renderer — watches the agent play during training
+    └── evaluate.py        ← Post-training evaluation
+```
+
+### Two-Level Hierarchy
+
+```
+┌─────────────────────────────────────────────────┐
+│  META-POLICY  (selects every 200 low-level steps) │
+│  Input : 16-dim meta-observation                  │
+│  Output: target archetype (0–4)                   │
+│  Network: MLP 16 → 128 → 128 → 5                 │
+└───────────────────┬─────────────────────────────┘
+                    │  target archetype (one-hot)
+                    ▼
+┌─────────────────────────────────────────────────┐
+│  LOW-LEVEL POLICY  (acts every game step)         │
+│  Input : 119-dim observation                      │
+│  Output: move (9) + dash (2) + shop (3)           │
+│  Network: MLP 119 → 256 → 256 → heads            │
+└─────────────────────────────────────────────────┘
+                    │  action
+                    ▼
+         FlowGameEnv (headless)
+```
+
+Both policies are trained concurrently with independent PPO instances, sharing no weights.
+
+### LowLevelPolicy
+
+```
+Shared trunk:  Linear(119, 256) → LayerNorm → ReLU
+               Linear(256, 256) → LayerNorm → ReLU
+                    │
+         ┌──────────┼──────────┐
+    move head   dash head   shop head   value head
+    (→ 9)       (→ 2)       (→ 3)       (→ 1)
+```
+
+During play: `log_prob = log_prob(move) + log_prob(dash)`.  
+During shop: `log_prob = log_prob(shop)`.  
+The active head is selected by the `is_shop` flag embedded in the observation.
+
+### MetaPolicy
+
+```
+Trunk:  Linear(16, 128) → ReLU → Linear(128, 128) → ReLU
+               │
+      ┌────────┴────────┐
+  arch head (→ 5)   value head (→ 1)
+```
+
+---
+
+## 📐 Observation Space
+
+**119-dimensional float32 vector** — always the same shape regardless of game state.
+
+| Slice | Dims | Content |
+|-------|------|---------|
+| `[0:5]` | 5 | Behavioural features: `v_norm, apm, dir_variance, threat, idle_time` (same 5 the game's inference engine uses) |
+| `[5:13]` | 8 | Player: `pos_x, pos_y, vel_x, vel_y, hp_norm, dash_cd_norm, is_dashing, has_invuln` |
+| `[13:17]` | 4 | Room: `time_remaining_norm, kills_remaining_norm, room_norm, is_boss` |
+| `[17:22]` | 5 | Current `π` — live output of the game's inference engine |
+| `[22:27]` | 5 | Target archetype one-hot — set by meta-policy |
+| `[27]` | 1 | `is_shop` flag |
+| `[28:43]` | 15 | Shop upgrade one-hots (3 slots × 5 upgrade types) |
+| `[43:91]` | 48 | Nearest 8 enemies: `(dx, dy, is_chaser, is_fast, is_tank, hp_norm)` each |
+| `[91:119]` | 28 | Nearest 4 pickups: `(dx, dy, is_heal, is_dash, is_speed, is_shield, is_maxhp)` each |
+
+> The behavioural features `[0:5]` are the exact same inputs the game uses to infer `π`. This design means the agent can observe how its own behaviour looks to the psychological model — closing the loop between "what I do" and "what state the game thinks I'm in".
+
+### Meta-Policy Observation (16-dim)
+
+| Slice | Content |
+|-------|---------|
+| `[0:5]` | Current `π` |
+| `[5]` | Score delta over last option period (normalised) |
+| `[6]` | Room progress (normalised, max ~20) |
+| `[7]` | Time remaining in room (normalised) |
+| `[8]` | Kills remaining (normalised) |
+| `[9]` | Player HP (normalised) |
+| `[10:15]` | Previous target archetype (one-hot) |
+| `[15]` | Padding |
+
+---
+
+## 🎯 Action Space
+
+### During PLAYING / BOSS
+
+| Head | Values | Meaning |
+|------|--------|---------|
+| **move** | 0–8 | 0=none, 1=up, 2=down, 3=left, 4=right, 5=↖ 6=↗ 7=↙ 8=↘ |
+| **dash** | 0–1 | 0=no dash, 1=dash |
+
+Combined log-probability: `log π(move) + log π(dash)`
+
+### During SHOP
+
+| Head | Values | Meaning |
+|------|--------|---------|
+| **shop** | 0–2 | Choose upgrade slot 1, 2, or 3 |
+
+The network always computes all three heads; the env flags which is active via `is_shop` in the observation.
+
+---
+
+## 🏆 Reward Design
+
+Per-step reward:
+
+```
+reward = score_delta / 500.0
+       + λ[target] × π[target]
+       + 0.005  (survival bonus per step)
+       − 1.0    (death penalty, terminal steps only)
+```
+
+`score_delta` is the score gained since the previous step.  
+`π[target]` is the game's current inference of how well behaviour matches the target archetype.
+
+### Per-Archetype λ Values
+
+| Archetype | λ | Reasoning |
+|-----------|---|-----------|
+| Arousal | 0.3 | Score already rewards aggression; alignment weight kept lower |
+| Tactical | 0.4 | Balanced; positioning pays off directly |
+| Overload | 0.3 | Hard to maintain deliberately; lower weight reduces frustration |
+| **Flow** | **0.5** | Highest weight — the primary target; score and alignment reinforce each other |
+| Apathy | 0.5 | Hardest to maintain (game punishes passivity); higher weight needed |
+
+### Meta-Policy Reward
+
+```
+meta_reward = sum of low-level rewards over the 200-step option period
+```
+
+The meta-policy is rewarded for picking archetypes that lead to high cumulative performance over a ~7-second window.
+
+---
+
+## 🔄 Hierarchical Training
+
+### Option Framework
+
+```
+Every 200 low-level steps (~6.7 simulated seconds):
+
+  1. Meta-policy observes meta_obs (16-dim)
+  2. Meta-policy selects target archetype a ∈ {0,1,2,3,4}
+  3. For 200 steps:
+       obs includes target one-hot
+       low-level policy acts → (move, dash, shop)
+       reward = score_delta/500 + λ[a] × π[a] + survival
+  4. meta_reward = sum(rewards over 200 steps)
+  5. Store (meta_obs, a, meta_reward, ...) in meta buffer
+```
+
+### PPO Parameters
+
+| | Low-Level | Meta-Policy |
+|-|-----------|-------------|
+| Rollout steps | 2048 / env | 10,240 / env |
+| Epochs | 4 | 4 |
+| Minibatches | 8 | 4 |
+| Learning rate | 3e-4 | 1e-4 |
+| Entropy coeff | 0.01 | 0.05 |
+| GAE λ | 0.95 | 0.95 |
+| PPO clip ε | 0.2 | 0.2 |
+| Gradient clip | 0.5 | 0.5 |
+
+Meta entropy is higher (0.05) to encourage the policy to explore all five archetypes rather than collapsing to one.
+
+### Parallelism
+
+```python
+# rl_agent/config.py
+NUM_ENVS = 8     # RTX 4060 8 GB  — change this one line to scale
+NUM_ENVS = 64    # A6000 48 GB
+```
+
+Each env runs in a separate OS process (`spawn` context, CPU-only) and communicates via `multiprocessing.Pipe`. The main process runs policy inference and PPO updates on GPU. Rollout buffers live as numpy arrays on CPU; they are moved to GPU only during the PPO update.
+
+**Memory usage**: ~140 MB VRAM. Models are tiny (~120k parameters total). The CUDA runtime itself accounts for ~100 MB of that figure.
+
+---
+
+## 🚀 Training Guide
+
+### Start Training (RTX 4060, with live watcher window)
+
+```bash
+/home/atharv/venv/bin/python3 -m rl_agent.train \
+    --num_envs 8 \
+    --watch \
+    --watch_windowed
+```
+
+The `--watch` flag:
+1. Runs a 2048-step warm-up to create an initial checkpoint
+2. Opens a live game window rendering the agent's play
+3. Continues full training; the window auto-reloads every 15 s
+
+### Scale to A6000
+
+```bash
+/home/atharv/venv/bin/python3 -m rl_agent.train \
+    --num_envs 64 \
+    --total_steps 50_000_000
+```
+
+### Resume from Checkpoint
+
+```bash
+/home/atharv/venv/bin/python3 -m rl_agent.train \
+    --num_envs 8 \
+    --resume rl_agent/checkpoints/checkpoint_step5000000.pt
+```
+
+### Short Smoke Run (verify setup)
+
+```bash
+FLOW_HEADLESS=1 /home/atharv/venv/bin/python3 -m rl_agent.train \
+    --num_envs 1 \
+    --total_steps 4096
+```
+
+### Training Output
+
+```
+Device  : cuda
+Envs    : 8
+Steps   : 10,000,000
+
+step=    2,048  eps=  0  sps=  233  ll_pg=-0.0063  ll_vf=0.165  ll_ent=2.882
+step=    4,096  eps=  0  sps=  394  ll_pg=-0.0042  ll_vf=0.269  ll_ent=2.879
+...
+[checkpoint] saved rl_agent/checkpoints/checkpoint_step100000.pt
+```
+
+| Field | Meaning |
+|-------|---------|
+| `sps` | Environment steps per second across all workers |
+| `ll_pg` | Low-level PPO policy gradient loss |
+| `ll_vf` | Value function loss |
+| `ll_ent` | Entropy (higher = more exploration) |
+| `meta_pg` | Meta-policy gradient loss (appears after first meta update) |
+
+Checkpoints are saved every 100,000 steps and at completion.
+
+### What to Expect
+
+| Steps | Expected Behaviour |
+|-------|--------------------|
+| 0–50k | Random movement; occasional room clears |
+| 50k–200k | Learns to move and dash consistently; reaches room 3–5 |
+| 200k–1M | Learns to fight; room 5–10; boss engagement starts |
+| 1M–5M | Archetype alignment emerges; Flow agent becomes smooth |
+| 5M–10M | Strong specialisation per archetype; room 10+ reliably |
+
+---
+
+## 👁️ Watching the Agent
+
+### Standalone Watcher
+
+Open a second terminal while training runs:
+
+```bash
+/home/atharv/venv/bin/python3 -m rl_agent.watch \
+    --windowed \
+    --reload_every 15
+```
+
+The watcher auto-detects and loads the newest checkpoint every 15 seconds.
+
+### Watcher Keys
+
+| Key | Action |
+|-----|--------|
+| **1–5** | Force target archetype (1=Arousal … 5=Apathy) |
+| **R** | Reload latest checkpoint immediately |
+| **Space** | Pause / unpause |
+| **ESC** | Quit |
+
+### HUD Overlay
+
+The watcher renders the full game (all shaders, all post-processing) plus a bottom HUD strip showing:
+- Live π bar for all five archetypes (target archetype is brighter)
+- Score, HP, room number, current target name
+
+### Post-Training Evaluation
+
+```bash
+/home/atharv/venv/bin/python3 -m rl_agent.evaluate \
+    --checkpoint rl_agent/checkpoints/checkpoint_final.pt \
+    --archetype flow \
+    --windowed
+```
+
+Available archetypes: `arousal`, `tactical`, `overload`, `flow`, `apathy`
+
+---
+
+## ⚙️ RL Configuration
+
+All hyperparameters are in [rl_agent/config.py](rl_agent/config.py):
+
+```python
+# --- Scale this to match your GPU ---
+NUM_ENVS            = 8          # 8 for RTX 4060 / 64 for A6000
+
+# --- Environment ---
+SIM_DT              = 1 / 30.0   # 30 Hz simulation
+MAX_EP_STEPS        = 50_000     # episode truncation
+OBS_DIM             = 119
+
+# --- Hierarchical ---
+OPTION_PERIOD_K     = 200        # low-level steps per meta decision
+
+# --- PPO (low-level) ---
+LR_LOW              = 3e-4
+LL_ROLLOUT_STEPS    = 2048
+LL_N_EPOCHS         = 4
+ENT_COEF_LL         = 0.01
+
+# --- PPO (meta) ---
+LR_META             = 1e-4
+META_ROLLOUT_STEPS  = 10_240
+ENT_COEF_META       = 0.05
+
+# --- Reward ---
+LAMBDA_ALIGN = {
+    0: 0.3,   # Arousal
+    1: 0.4,   # Tactical
+    2: 0.3,   # Overload
+    3: 0.5,   # Flow
+    4: 0.5,   # Apathy
+}
+SCORE_NORM          = 500.0
+SURVIVAL_BONUS      = 0.005
+DEATH_PENALTY       = -1.0
+
+# --- Training budget ---
+TOTAL_TIMESTEPS     = 10_000_000
+CHECKPOINT_EVERY    = 100_000
+```
 
 ---
 
 ## 🐛 Troubleshooting
 
 ### Game Won't Start
-- Ensure Python 3.8+ is installed: `python --version`
-- Verify dependencies: `pip list | grep -E 'pygame|torch|numpy'`
-- Try CPU-only torch: `pip install torch --index-url https://download.pytorch.org/whl/cpu`
+```bash
+# Verify dependencies
+pip list | grep -E 'pygame|torch|numpy|OpenGL'
 
-### Low FPS / Laggy
-- Check GPU utilization: `nvidia-smi` (if NVIDIA)
-- Disable fullscreen: `python flow_game.py --windowed`
-- Reduce number of enemies in [game/config.py](game/config.py): `MAX_ENEMIES = 8` (from 16)
+# Check OpenGL version
+python -c "from OpenGL.GL import glGetString, GL_VERSION; import pygame; pygame.init(); pygame.display.set_mode((1,1), pygame.OPENGL); print(glGetString(GL_VERSION))"
+```
 
-### Controls Unresponsive
-- Ensure Pygame is detecting your keyboard (required on some Linux setups):
-  ```bash
-  pip install --upgrade pygame
-  ```
+### RL Training Hangs at Startup
+Workers use `spawn` (not `fork`) to avoid CUDA conflicts. First startup takes 10–20 s while worker processes import torch. If it hangs beyond 60 s:
+```bash
+# Test env in isolation
+FLOW_HEADLESS=1 /home/atharv/venv/bin/python3 -m rl_agent.env
+```
 
-### Shader Compilation Error
-- Verify OpenGL 3.3+ support:
-  ```bash
-  python -c "import OpenGL; from OpenGL.GL import glGetString, GL_VERSION; print(glGetString(GL_VERSION))"
-  ```
-- Update GPU drivers
+### VRAM is Only ~140 MB — Is That Right?
+Yes. Models are ~120k parameters (<1 MB of weights). PyTorch's CUDA runtime requires ~100 MB overhead regardless of model size. Rollout buffers are numpy on CPU.
+
+### Agent Stuck at Room 1
+Normal before 50k steps. Check the env smoke test to confirm game logic is working:
+```bash
+FLOW_HEADLESS=1 /home/atharv/venv/bin/python3 -m rl_agent.env
+# Should print: Smoke test OK: 200 steps, total_reward=...
+```
+
+### Watcher Shows Black Screen
+The watcher needs a display. If running over SSH:
+```bash
+export DISPLAY=:0
+/home/atharv/venv/bin/python3 -m rl_agent.watch --windowed
+```
+
+### "No checkpoint found" on Watcher Launch
+Either run `--watch` with train (auto warm-up), or do a short training run first:
+```bash
+FLOW_HEADLESS=1 /home/atharv/venv/bin/python3 -m rl_agent.train \
+    --num_envs 1 --total_steps 2048
+```
 
 ---
 
-## 📊 Symbol Table (Backend)
+## 📊 Symbol Reference
+
+### Game Backend
 
 | Symbol | Meaning | Value |
 |--------|---------|-------|
 | `D` | Observation dimensionality | 5 |
 | `K` | Archetype count | 5 |
-| `W_HIST` | Historical window | 16 |
-| `W_FUT` | Projected future window | 16 |
+| `W_HIST` | History frames | 16 |
+| `W_FUT` | Future-projection frames | 16 |
 | `W_TOTAL` | Total attention window | 32 |
 | `D_K` | Attention inner dimension | 16 |
-| `P` | Environment parameters | 4 |
+| `P` | Environment physics parameters | 4 |
 | `V_LATENT` | Visual latent dimensions | 4 |
-| `EMA_ALPHA` | EMA baseline rate | 0.02 |
-| `MAX_ENEMIES` | Shader uniform array size | 16 |
-| `WORLD_HALF` | Arena half-size | 16.0 |
+| `EMA_ALPHA` | EMA baseline decay | 0.02 |
+| `WORLD_HALF` | Arena half-size (units) | 16.0 |
 
----
+### RL Agent
 
-## 🎨 Visual Aesthetic
-
-The game features a **dynamically-tinted neon arena** where the entire experience adapts to your psychological state:
-
-- **Arousal**: Warm ember reds, sharp contrasts, intense blur/aberration
-- **Tactical**: Cool deep blues, clean lines, strategic grid visibility
-- **Overload**: Chaotic violets, heavy grain, reality-warping distortion
-- **Flow**: Peaceful teals, smooth bloom, balanced aesthetics
-- **Apathy**: Muted grays, low contrast, dreamlike haze
-
----
-
-## 📝 License & Credits
-
-**Flow Game** — Created as an experimental intersection of psychology, machine learning, and game design.
-
-Built with:
-- PyTorch (Python ML framework)
-- Pygame (Game engine)
-- PyOpenGL (GPU rendering)
-- GLSL (Fragment shaders)
+| Symbol | Meaning | Value |
+|--------|---------|-------|
+| `OBS_DIM` | Low-level observation size | 119 |
+| `META_OBS_DIM` | Meta-policy observation size | 16 |
+| `N_ARCHETYPES` | Number of psychological archetypes | 5 |
+| `OPTION_PERIOD_K` | Low-level steps per meta decision | 200 |
+| `SIM_DT` | Simulated seconds per env step | 1/30 |
+| `GAMMA` | Discount factor | 0.99 |
+| `GAE_LAMBDA` | GAE smoothing | 0.95 |
+| `CLIP_EPS` | PPO surrogate clip | 0.2 |
 
 ---
 
 ## 🚀 Future Ideas
 
-Some wild creative enhancements planned:
+### Game
+1. **Doppelgänger Boss** — a ghost copy with mirrored `π`
+2. **Hivemind Swarms** — coordinated enemy formations driven by Overload
+3. **Time Dilation** — bullet-time when Flow crosses 0.8
+4. **Fractured Reality** — parallel arena overlaid at high Overload
+5. **Archetype Loadouts** — unlock unique abilities per dominant state
 
-1. **Doppelgänger Boss** — A ghostly copy of the player with mirrored behavior
-2. **Hivemind Enemies** — Coordinated swarms with visible threading
-3. **Time Dilation** — Archetype-dependent bullet-time mechanics
-4. **Philosophical Boss Phases** — Each boss form represents a different archetype
-5. **Emotional Contagion** — Boss AI state bleeds into player psychology
-6. **Fractured Reality** — Parallel dimensions at high Overload states
-7. **AI Allies** — Recruit defeated enemies as allies during Flow state
-8. **Archetype Loadouts** — Unlock unique abilities per dominant state
-9. **Physics Puzzles** — Rooms with obstacles that adapt to current friction/friction state
-
----
-
-## 💬 Contact & Feedback
-
-Questions or ideas? Reach out or open an issue in the project repository.
+### RL Agent
+1. **Self-play adversarial training** — one agent as the game, one as the player
+2. **Curiosity-driven exploration** — intrinsic reward for novel `π` states
+3. **Multi-task fine-tuning** — warm-start from one archetype to transfer to others
+4. **Imitation learning warm-up** — record human play per archetype as BC seed
+5. **Online adaptation** — meta-policy updates in real-time during deployment
 
 ---
 
-**Enjoy the Flow!** 🌊✨
+## 📝 Credits
+
+**Flow Game** — *Ideated at 3AM by Atharv Sharma & Shoyam Mishra*
+
+**RL Agent** — *Atharv Sharma*
+
+Built with:
+- PyTorch — inference engine + RL training
+- Pygame — windowing, input, HUD
+- PyOpenGL — GPU shader rendering
+- GLSL — fragment shader (procedural scene)
+- NumPy — simulation numerics
 
 ---
 
-*Last Updated: April 2026*
+**Enjoy the Flow.** 🌊✨
+
+*Last Updated: May 2026*
