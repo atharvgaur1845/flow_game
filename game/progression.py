@@ -74,11 +74,14 @@ class RunState:
     def room_goal_met(self) -> bool:
         if self.is_boss_room:
             return False  # boss handled separately
-        if self.kills_in_room >= self.room_kills_required:
-            return True
-        if self.room_time_remaining <= 0.0:
-            return True
-        return False
+        return self.kills_in_room >= self.room_kills_required
+
+    def time_expired(self) -> bool:
+        """True when the room timer runs out without meeting the kill goal.
+        Callers treat this as a death condition, not a clear."""
+        if self.is_boss_room:
+            return False
+        return self.room_time_remaining <= 0.0 and not self.room_goal_met()
 
     def should_open_shop(self) -> bool:
         return (self.room > 0

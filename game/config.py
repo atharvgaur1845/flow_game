@@ -13,23 +13,23 @@ WINDOWED_SIZE      = (1280, 800)
 PLAYER_MAX_HP      = 100
 PLAYER_ACCEL       = 22.0      # base acceleration magnitude
 DASH_COOLDOWN      = 2.5       # seconds (baseline; shop upgrades scale it)
-DASH_INVULN        = 1.0       # full second of i-frames + dashing window
+DASH_INVULN        = 0.4       # i-frames window (was 1.0 — too exploitable)
 DASH_IMPULSE       = 4.0
-HIT_INVULN         = 0.5
-DAMAGE_ON_HIT      = 10
+HIT_INVULN         = 0.3       # post-hit grace (was 0.5)
+DAMAGE_ON_HIT      = 15        # per-hit damage (was 10)
 
 # --- Rooms ----------------------------------------------------------------
-ROOM_BASE_TIME     = 20.0      # seconds
-ROOM_TIME_STEP     = 3.0       # +seconds per room
-ROOM_BASE_KILLS    = 5
-ROOM_KILL_STEP     = 2
+ROOM_BASE_TIME     = 30.0      # seconds (timer is a hard cap, not a clear)
+ROOM_TIME_STEP     = 2.0       # +seconds per room
+ROOM_BASE_KILLS    = 8         # kills needed to clear (was 5)
+ROOM_KILL_STEP     = 3         # +kills per room (was 2)
 SHOP_EVERY_N_ROOMS = 3         # after every 3 rooms
 BOSS_EVERY_N_ROOMS = 5         # 5th room of every cycle is a boss
 
 # --- Enemies --------------------------------------------------------------
 MAX_ENEMIES        = 16        # matches shader uniform array size
-ENEMY_SCALE_SPEED  = 0.10      # +10% speed per room (on top of E[0])
-ENEMY_SCALE_SPAWN  = 0.15      # +15% spawn rate per room
+ENEMY_SCALE_SPEED  = 0.15      # +15% speed per room (was 0.10)
+ENEMY_SCALE_SPAWN  = 0.22      # +22% spawn rate per room (was 0.15)
 
 # Enemy archetype stats.
 ENEMY_STATS = {

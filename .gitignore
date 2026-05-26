@@ -1,7 +1,9 @@
 __pycache__/
 *.pyc
 *.pyd  
-./game/__pycache__/
+/game/__pycache__
 ./game/*.pyc
 ./game/*.pyd
-./game/assets/__pycache__/
+/game/assets/__pycache__
+/rl_agent/checkpoints
+/rl_agent/__pycache__

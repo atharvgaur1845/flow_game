@@ -20,6 +20,7 @@ import argparse
 import collections
 import ctypes
 import math
+import os
 import random
 import sys
 import time
@@ -44,7 +45,11 @@ from game.progression import (
     UPGRADES, RunState, apply_upgrade, pick_shop_choices,
     scale_enemy_speed, scale_spawn_rate,
 )
-from game.ui import STATE_COLORS, STATE_NAMES, UIOverlay
+
+# Skip pygame/OpenGL UI imports when running headless (e.g. RL training).
+_HEADLESS = os.environ.get("FLOW_HEADLESS", "0") == "1"
+if not _HEADLESS:
+    from game.ui import STATE_COLORS, STATE_NAMES, UIOverlay
 
 # ----------------------------------------------------------------------------
 # Hyperparameters / symbol table (backend)
@@ -967,9 +972,12 @@ def run_game(windowed: bool = False) -> int:
             # --- Progression ---------------------------------------------
             run.room_time_remaining -= dt
             run.tick(pi, dt)
-            if state == GameState.PLAYING and run.room_goal_met():
-                run.clear_room()
-                start_next_room_or_shop()
+            if state == GameState.PLAYING:
+                if run.room_goal_met():
+                    run.clear_room()
+                    start_next_room_or_shop()
+                elif run.time_expired():
+                    player.hp = 0.0   # failed kill quota — death
 
             if player.hp <= 0.0:
                 player.hp = 0.0
