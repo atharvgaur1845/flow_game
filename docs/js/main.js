@@ -176,8 +176,17 @@ function startRun() {
   ui.hideAll();
   hud.show(true);
   hud.hint(null);
+  hud.timerWarning(null);
+  g._lastTick = -1;
   g._hintMoveDone = store.hasSeen("hint.move");
   g._hintDashDone = store.hasSeen("hint.dash");
+
+  // Rooms clear on kills, not on surviving — worth saying once.
+  if (!store.hasSeen("hint.quota")) {
+    store.markSeen("hint.quota");
+    hud.toast("THE GOAL", `Kill ${g.run.roomKillsRequired} to clear room 1`,
+      "Beat the timer for the full clear bonus. Miss it and the room just continues.", 8000);
+  }
 }
 
 function toTitle() {
@@ -202,6 +211,7 @@ function resume() {
 
 function abandon() {
   g.player.hp = 0;
+  g.run.deathCause = "abandoned";
   g.state = g._pausedFrom || ST.PLAYING;
   endRun();
 }
@@ -497,7 +507,9 @@ function step(dt) {
   }
 
   // --- progression ---------------------------------------------------------
-  g.run.roomTimeRemaining -= dt;
+  // Clamped at zero: past the timer the room is in overtime, and a negative
+  // countdown on the HUD is just noise.
+  g.run.roomTimeRemaining = Math.max(0, g.run.roomTimeRemaining - dt);
   g.run.tick(g.pi, dt);
 
   if (attract) {
@@ -516,13 +528,16 @@ function step(dt) {
       g.run.clearRoom();
       audio.roomClear();
       startNextRoomOrShop();
-    } else if (g.run.timeExpired()) {
-      p.hp = 0; // failed the kill quota — death
+    } else if (g.run.checkOvertime()) {
+      // Timer out: the room continues, the clear bonus is halved.
+      audio.overtime();
+      hud.toast("OVERTIME", "Clear bonus halved", "Keep killing — the room is still yours to clear.", 4000);
     }
   }
 
   if (!attract && p.hp <= 0 && g.state !== ST.REPORT) {
     p.hp = 0;
+    if (!g.run.deathCause) g.run.deathCause = "killed";
     endRun();
     return;
   }
@@ -542,6 +557,7 @@ function step(dt) {
       dt);
     updateHints(oT);
     updateHeartbeat(dt);
+    updateQuotaWarning();
 
     g.piSampleAccum += dt;
     if (g.piSampleAccum >= 0.25) {
@@ -597,6 +613,26 @@ function updateHints(oT) {
     } else {
       hud.hint(null);
     }
+  }
+}
+
+/** Countdown to losing the full clear bonus. Nothing here is fatal — it just
+ *  makes the stake legible before it is gone. */
+function updateQuotaWarning() {
+  const run = g.run;
+  const t = run.roomTimeRemaining;
+  if (run.isBossRoom || run.overtime || run.roomGoalMet() || t > 12 || t <= 0) {
+    hud.timerWarning(null);
+    g._lastTick = -1;
+    return;
+  }
+  hud.timerWarning(Math.max(0, run.roomKillsRequired - run.killsInRoom), t);
+
+  // One tick per second under 10s, rising in pitch as it closes.
+  const sec = Math.ceil(t);
+  if (sec <= 10 && sec !== g._lastTick) {
+    g._lastTick = sec;
+    audio.timerTick(sec);
   }
 }
 

@@ -376,13 +376,16 @@ c = W_c2 @ ReLU(W_c1 @ π)
 
 | Metric | Formula |
 |--------|---------|
-| Normal room time limit | `30 + room × 2` seconds |
+| Normal room bonus window | `30 + room × 2` seconds |
 | Kills required | `8 + room × 3` |
 | Enemy speed scaling | `E[0] × (1 + 0.15 × room)` |
 | Spawn rate scaling | `E[1] × (1 + 0.22 × room)` |
-| Boss room time limit | `60 + room × 4` seconds |
+| Boss room timer | `60 + room × 4` seconds (cosmetic) |
+| Overtime clear bonus | `0.5 ×` the normal room/boss clear score |
 
-> **Rooms clear by kills only.** Running out of time without meeting the kill quota counts as death.
+> **Rooms clear by kills only.** The room timer is a *bonus* window, not a fail state: beat it and you get the full clear bonus, miss it and the room drops into **overtime** — it keeps going, and clearing it is worth `ROOM_OVERTIME_MULT` (0.5×) of the normal bonus. The only way to die is losing all your HP.
+>
+> This replaces the original rule, where running the timer out killed you instantly at full HP with no on-screen explanation — which read as the game cheating rather than as a mechanic. The change applies to all three builds (desktop, web and the RL env) via the shared `game/progression.py` / `docs/js/progression.js`.
 
 ### Scoring
 
@@ -490,6 +493,7 @@ BOSS_DASH_DAMAGE    = 14
 SCORE_KILL_BASE  = 25
 SCORE_ROOM_CLEAR = 250
 SCORE_BOSS_CLEAR = 2000
+ROOM_OVERTIME_MULT = 0.5    # clear bonus after the room timer expires
 ```
 
 ---

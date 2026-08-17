@@ -234,7 +234,7 @@ function step(dt) {
     }
   }
 
-  g.run.roomTimeRemaining -= dt;
+  g.run.roomTimeRemaining = Math.max(0, g.run.roomTimeRemaining - dt);
   g.run.tick(g.pi, dt);
 
   if (!g.isBoss) {
@@ -242,8 +242,8 @@ function step(dt) {
       g.run.clearRoom();
       stats.rooms++;
       nextRoom();
-    } else if (g.run.timeExpired()) {
-      p.hp = 0;
+    } else {
+      g.run.checkOvertime();
     }
   }
 
@@ -262,6 +262,7 @@ function step(dt) {
     s += g.pi[k];
     check(g.pi[k] >= -1e-9 && g.pi[k] <= 1 + 1e-9, `pi[${k}]=${g.pi[k]} out of range`);
   }
+  check(g.run.roomTimeRemaining >= 0, `room timer went negative (${g.run.roomTimeRemaining})`);
   check(Math.abs(s - 1) < 1e-6, `pi sums to ${s}, not 1`);
   check(g.E.every(Number.isFinite) && g.c.every(Number.isFinite), "E or c went non-finite");
 }

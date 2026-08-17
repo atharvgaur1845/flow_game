@@ -174,7 +174,20 @@ export class UI {
     const dom = run.dominantArchetype();
     const total = run.piSeconds.reduce((a, b) => a + b, 0) || 1;
     const pct = Math.round((run.piSeconds[dom] / total) * 100);
+
+    // Name the cause outright. A run that just ends, with no stated reason,
+    // reads as the game cheating.
+    let cause;
+    if (run.deathCause === "abandoned") {
+      cause = `<span class="cause">RUN ABANDONED</span>`;
+    } else {
+      cause =
+        `<span class="cause bad">KILLED</span> — you ran out of HP in room ${run.room}.<br>` +
+        `<span class="cause-tip">Dash through enemies rather than into them — the trail keeps killing for 1.6s after the dash ends, and you are invulnerable while it runs.</span>`;
+    }
+
     $("report-verdict").innerHTML =
+      `<div class="cause-line">${cause}</div>` +
       `You spent most of this run in <b style="color:${archVar(dom)}">${STATE_NAMES[dom]}</b> ` +
       `(${pct}% of ${Math.round(run.timeSurvived)}s).`;
 

@@ -374,15 +374,19 @@ class FlowGameEnv:
                 self._start_next_room_or_shop()
 
         # --- Progression ---
-        run.room_time_remaining -= dt
+        # Clamped at zero so the normalised time-remaining observation stays
+        # in [0, 1] once a room drops into overtime.
+        run.room_time_remaining = max(0.0, run.room_time_remaining - dt)
         run.tick(pi, dt)
         if self.state == GameState.PLAYING:
             if run.room_goal_met():
                 run.clear_room()
                 self._start_next_room_or_shop()
-            elif run.time_expired():
-                # Failed to meet kill quota in time — treat as death.
-                player.hp = 0.0
+            else:
+                # Timer expiry drops the room into overtime (halved clear
+                # bonus) rather than killing the agent. Episodes now end only
+                # on HP loss or MAX_EP_STEPS truncation.
+                run.check_overtime()
 
         if player.hp <= 0.0:
             player.hp = 0.0

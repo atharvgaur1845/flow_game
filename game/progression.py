@@ -36,10 +36,15 @@ class RunState:
     room_time_remaining: float = 0.0
     room_kills_required: int = 0
     is_boss_room: bool = False
+    # Set once the room timer hits zero without the kill quota being met.
+    # The room keeps going; only the clear bonus suffers.
+    overtime: bool = False
+    overtime_rooms: int = 0
 
     def start_next_room(self) -> None:
         self.room += 1
         self.kills_in_room = 0
+        self.overtime = False
         self.is_boss_room = (self.room % config.BOSS_EVERY_N_ROOMS == 0)
         if self.is_boss_room:
             self.room_time_total = 60.0 + self.room * 4.0
@@ -53,8 +58,11 @@ class RunState:
 
     def clear_room(self) -> None:
         self.rooms_cleared += 1
-        self.score += (config.SCORE_BOSS_CLEAR if self.is_boss_room
-                       else config.SCORE_ROOM_CLEAR)
+        base = (config.SCORE_BOSS_CLEAR if self.is_boss_room
+                else config.SCORE_ROOM_CLEAR)
+        if self.overtime:
+            base *= config.ROOM_OVERTIME_MULT
+        self.score += base
 
     def tick(self, pi, dt: float) -> None:
         flow = float(pi[ARCH_FLOW])
@@ -76,12 +84,24 @@ class RunState:
             return False  # boss handled separately
         return self.kills_in_room >= self.room_kills_required
 
-    def time_expired(self) -> bool:
-        """True when the room timer runs out without meeting the kill goal.
-        Callers treat this as a death condition, not a clear."""
-        if self.is_boss_room:
+    def check_overtime(self) -> bool:
+        """Flip the room into overtime when its timer runs out.
+
+        Running out of time is *not* a death: the room simply continues with
+        the clear bonus halved. Clamps the timer at zero so the HUD never
+        shows a negative countdown.
+
+        Returns True only on the tick the transition happens, so callers can
+        fire a one-shot cue.
+        """
+        if self.is_boss_room or self.overtime:
             return False
-        return self.room_time_remaining <= 0.0 and not self.room_goal_met()
+        if self.room_time_remaining > 0.0 or self.room_goal_met():
+            return False
+        self.room_time_remaining = 0.0
+        self.overtime = True
+        self.overtime_rooms += 1
+        return True
 
     def should_open_shop(self) -> bool:
         return (self.room > 0

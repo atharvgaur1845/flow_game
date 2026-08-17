@@ -595,6 +595,25 @@ export class AudioEngine {
     this._tone({ type: "sine", f0: 90, f1: 40, dur: 2.4, gain: 0.3 });
   }
 
+  /** Room-timer countdown. Pitch rises as the remaining seconds fall, so the
+   *  urgency is audible without looking at the clock. */
+  timerTick(secondsLeft) {
+    if (!this.ready) return;
+    const f = 520 + (10 - Math.min(secondsLeft, 10)) * 62;
+    const loud = secondsLeft <= 5;
+    this._tone({ type: "square", f0: f, f1: f, dur: loud ? 0.09 : 0.06, gain: loud ? 0.17 : 0.09 });
+    if (loud) this._tone({ type: "triangle", f0: f * 2, f1: f * 2, dur: 0.07, gain: 0.07 });
+  }
+
+  /** Room dropped into overtime: a downward resolve, not an alarm. Nothing
+   *  bad happened to the player, they just lost half the clear bonus. */
+  overtime() {
+    if (!this.ready) return;
+    [0, -2, -5].forEach((n, i) =>
+      this._tone({ type: "triangle", f0: 440 * semi(n), f1: 440 * semi(n), dur: 0.5, gain: 0.12, t0: i * 0.11 }));
+    this._tone({ type: "sine", f0: 160, f1: 96, dur: 0.7, gain: 0.18 });
+  }
+
   heartbeat() {
     if (!this.ready) return;
     this._tone({ type: "sine", f0: 90, f1: 44, dur: 0.16, gain: 0.34 });

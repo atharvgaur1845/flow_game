@@ -263,6 +263,40 @@ html, body {
   100% { opacity: 0; transform: translate(-50%, -18px); }
 }
 
+/* Bonus countdown. Amber, not red: missing it costs points, never the run. */
+#timer-warn {
+  position: absolute;
+  top: 13%;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  padding: 10px 22px;
+  border: 1px solid rgba(255, 210, 122, 0.5);
+  border-radius: 3px;
+  background: rgba(28, 20, 6, 0.82);
+  box-shadow: 0 0 40px -12px var(--gold);
+  white-space: nowrap;
+}
+
+#timer-warn .tw-head {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  color: var(--gold);
+}
+
+#timer-warn .tw-sub {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: var(--ink-dim);
+  margin-top: 3px;
+}
+
+#timer-warn.critical { animation: warn-flash 0.5s steps(1) infinite; }
+@keyframes warn-flash { 50% { border-color: var(--gold); background: rgba(64, 46, 10, 0.9); } }
+
+#goal .overtime { color: var(--gold); }
+
 #hint {
   position: absolute;
   bottom: 22%;
@@ -569,6 +603,22 @@ h1 em {
   margin-bottom: 20px;
 }
 #report-verdict b { color: var(--gold); }
+
+.cause-line {
+  margin-bottom: 10px;
+  padding: 10px 14px;
+  border-left: 3px solid var(--danger);
+  background: rgba(255, 107, 107, 0.07);
+  border-radius: 0 3px 3px 0;
+  line-height: 1.7;
+}
+.cause {
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  margin-right: 4px;
+}
+.cause.bad { color: var(--danger); }
+.cause-tip { color: var(--ink-faint); font-size: 11px; }
 
 .report-grid {
   display: grid;

@@ -28,17 +28,24 @@ export class RunState {
     this.roomTimeRemaining = 0;
     this.roomKillsRequired = 0;
     this.isBossRoom = false;
+    this.overtime = false;
+    this.overtimeRooms = 0;
     // Web-only telemetry, feeds the run report and the lifetime profile.
     this.piSeconds = [0, 0, 0, 0, 0];
     this.longestFlowStreak = 0;
     this._flowStreak = 0;
     this.upgradesTaken = [];
     this.bossesKilled = 0;
+    // "timeout" | "killed" | "abandoned" — the room timer killing you at full
+    // HP is the single most confusing thing this game does to a new player,
+    // so the report has to be able to name the cause.
+    this.deathCause = null;
   }
 
   startNextRoom() {
     this.room += 1;
     this.killsInRoom = 0;
+    this.overtime = false;
     this.isBossRoom = this.room % C.BOSS_EVERY_N_ROOMS === 0;
     if (this.isBossRoom) {
       this.roomTimeTotal = 60.0 + this.room * 4.0;
@@ -52,7 +59,9 @@ export class RunState {
 
   clearRoom() {
     this.roomsCleared += 1;
-    this.score += this.isBossRoom ? C.SCORE_BOSS_CLEAR : C.SCORE_ROOM_CLEAR;
+    let base = this.isBossRoom ? C.SCORE_BOSS_CLEAR : C.SCORE_ROOM_CLEAR;
+    if (this.overtime) base *= C.ROOM_OVERTIME_MULT;
+    this.score += base;
     if (this.isBossRoom) this.bossesKilled += 1;
   }
 
@@ -88,11 +97,18 @@ export class RunState {
     return this.killsInRoom >= this.roomKillsRequired;
   }
 
-  /** True when the room timer runs out without meeting the kill goal.
-   *  Callers treat this as a death condition, not a clear. */
-  timeExpired() {
-    if (this.isBossRoom) return false;
-    return this.roomTimeRemaining <= 0 && !this.roomGoalMet();
+  /** Flip the room into overtime when its timer runs out.
+   *
+   *  Running out of time is *not* a death: the room continues with the clear
+   *  bonus halved. Clamps the timer at zero so the HUD never shows a negative
+   *  countdown. Returns true only on the transition tick. */
+  checkOvertime() {
+    if (this.isBossRoom || this.overtime) return false;
+    if (this.roomTimeRemaining > 0 || this.roomGoalMet()) return false;
+    this.roomTimeRemaining = 0;
+    this.overtime = true;
+    this.overtimeRooms += 1;
+    return true;
   }
 
   shouldOpenShop() {

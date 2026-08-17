@@ -48,6 +48,7 @@ export class HUD {
       bossLabel: $("boss-label"),
       bossFill: $("boss-fill"),
       banner: $("pickup-banner"),
+      timerWarn: $("timer-warn"),
       hint: $("hint"),
       toasts: $("toasts"),
       ribbonWrap: $("ribbon-wrap"),
@@ -161,11 +162,17 @@ export class HUD {
     }
 
     const t = Math.max(0, run.roomTimeRemaining);
-    const urgent = t < 8 && !run.isBossRoom;
-    const goal = run.isBossRoom
-      ? `Defeat the BOSS · <span class="${urgent ? "urgent" : ""}">${t.toFixed(1)}s</span>`
-      : `Kill ${Math.max(0, run.roomKillsRequired - run.killsInRoom)} more · ` +
-        `<span class="${urgent ? "urgent" : ""}">${t.toFixed(1)}s remaining</span>`;
+    const left = Math.max(0, run.roomKillsRequired - run.killsInRoom);
+    let goal;
+    if (run.isBossRoom) {
+      goal = `Defeat the BOSS · ${t.toFixed(1)}s`;
+    } else if (run.overtime) {
+      goal = `Kill ${left} more · <span class="overtime">OVERTIME — clear bonus halved</span>`;
+    } else {
+      const urgent = t < 8;
+      goal = `Kill ${left} more · ` +
+        `<span class="${urgent ? "urgent" : ""}">${t.toFixed(1)}s for full bonus</span>`;
+    }
     if (this.el.goal.innerHTML !== goal) this.el.goal.innerHTML = goal;
 
     this._renderBuffs(player, g.simTime);
@@ -211,6 +218,28 @@ export class HUD {
     el.classList.remove("show");
     void el.offsetWidth; // restart the animation
     el.classList.add("show");
+  }
+
+  /** Countdown to losing the full clear bonus. Pass null to clear.
+   *  This is a points warning, not a death warning — the room continues
+   *  either way — so it is amber rather than red. */
+  timerWarning(short, secs) {
+    const el = this.el.timerWarn;
+    if (short === null) {
+      el.classList.add("hidden");
+      this._twSig = null;
+      return;
+    }
+    const critical = secs <= 5;
+    const sig = `${short}|${secs.toFixed(0)}|${critical}`;
+    if (sig !== this._twSig) {
+      this._twSig = sig;
+      el.innerHTML =
+        `<div class="tw-head">${short} MORE ${short === 1 ? "KILL" : "KILLS"} IN ${secs.toFixed(0)}s</div>` +
+        `<div class="tw-sub">FOR THE FULL CLEAR BONUS</div>`;
+    }
+    el.classList.remove("hidden");
+    el.classList.toggle("critical", critical);
   }
 
   /** Contextual onboarding prompt. Pass null to clear. */

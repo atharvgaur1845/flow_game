@@ -60,6 +60,11 @@ SCORE_TIME_BASE    = 1.0       # points/sec baseline
 SCORE_KILL_BASE    = 25        # points per kill (before multiplier)
 SCORE_ROOM_CLEAR   = 250
 SCORE_BOSS_CLEAR   = 2000
+# Running the room timer out is NOT a death. The room goes into overtime and
+# the clear bonus is scaled by this instead: the timer costs points, never
+# the run. (It used to be an instant kill, which read as the game cheating —
+# you died at full HP with no feedback explaining why.)
+ROOM_OVERTIME_MULT = 0.5
 
 # --- Visual feedback scalars ---------------------------------------------
 SHAKE_GAIN         = 0.25      # screen shake amplitude per unit c1

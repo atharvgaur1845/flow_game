@@ -970,14 +970,18 @@ def run_game(windowed: bool = False) -> int:
                     start_next_room_or_shop()
 
             # --- Progression ---------------------------------------------
-            run.room_time_remaining -= dt
+            # Clamped at zero: past the timer the room is in overtime, and a
+            # negative countdown on the HUD is just noise.
+            run.room_time_remaining = max(0.0, run.room_time_remaining - dt)
             run.tick(pi, dt)
             if state == GameState.PLAYING:
                 if run.room_goal_met():
                     run.clear_room()
                     start_next_room_or_shop()
-                elif run.time_expired():
-                    player.hp = 0.0   # failed kill quota — death
+                else:
+                    # Timer running out drops the room into overtime (halved
+                    # clear bonus); it is never a death.
+                    run.check_overtime()
 
             if player.hp <= 0.0:
                 player.hp = 0.0
@@ -1085,8 +1089,12 @@ def run_game(windowed: bool = False) -> int:
         if state == GameState.MENU:
             ui.render_menu(best_score)
         elif state == GameState.PLAYING:
-            goal = (f"Kill {run.room_kills_required - run.kills_in_room} more  "
-                    f"·  {max(0.0, run.room_time_remaining):4.1f}s remaining")
+            remaining = run.room_kills_required - run.kills_in_room
+            if run.overtime:
+                goal = f"Kill {remaining} more  ·  OVERTIME — clear bonus halved"
+            else:
+                goal = (f"Kill {remaining} more  "
+                        f"·  {max(0.0, run.room_time_remaining):4.1f}s for full bonus")
             ui.render_playing(player, run, pi, c, goal, boss=None,
                               now_t=time.time() - t_start,
                               pickup_msg=pickup_msg)

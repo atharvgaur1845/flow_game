@@ -81,6 +81,10 @@ export const SCORE_TIME_BASE = 1.0;
 export const SCORE_KILL_BASE = 25;
 export const SCORE_ROOM_CLEAR = 250;
 export const SCORE_BOSS_CLEAR = 2000;
+// Running the room timer out is NOT death in the web build (it is in
+// flow_game.py). The room goes into overtime instead and the clear bonus is
+// scaled by this — the timer costs you points, never the run.
+export const ROOM_OVERTIME_MULT = 0.5;
 
 // --- Visual feedback ------------------------------------------------------
 export const SHAKE_GAIN = 0.25;
