@@ -1,0 +1,6 @@
+{
+  "name": "flow-game-web",
+  "private": true,
+  "type": "module",
+  "description": "Marks docs/js as native ES modules (for node-based tooling in tools/). Not a build step \u2014 the site ships as plain static files."
+}

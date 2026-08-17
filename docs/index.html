@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#05060c">
+<title>Flow — Neon Arena</title>
+<meta name="description" content="A roguelite arena that reads your psychological state in real time and reshapes itself around it. Plays in the browser, no install.">
+
+<meta property="og:title" content="Flow — Neon Arena">
+<meta property="og:description" content="A roguelite arena that reads your psychological state in real time and reshapes itself around it.">
+<meta property="og:type" content="website">
+
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%23070912'/><circle cx='50' cy='50' r='24' fill='none' stroke='%2378ffc8' stroke-width='8'/><circle cx='50' cy='50' r='9' fill='%2378b4ff'/></svg>">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<canvas id="scene" aria-label="Game arena"></canvas>
+
+<!-- ══════════════════════════ IN-RUN HUD ══════════════════════════ -->
+<div id="hud" class="hidden" aria-hidden="true">
+
+  <div class="hud-corner hud-tl">
+    <div class="meter">
+      <span class="meter-lbl">HP</span>
+      <div class="bar bar-lg"><i id="hp-fill" class="fill hp"></i></div>
+      <span class="meter-val" id="hp-text">100 / 100</span>
+    </div>
+    <div class="meter">
+      <span class="meter-lbl">DASH</span>
+      <div class="bar bar-sm"><i id="dash-fill" class="fill dash"></i></div>
+      <span class="meter-val ready" id="dash-text">READY</span>
+    </div>
+    <div id="score-row">
+      <b id="score">0</b>
+      <span id="mult" class="tag tag-flow">×1.00</span>
+      <span id="room" class="tag tag-room">ROOM 1</span>
+      <span id="kills" class="tag">0 KILLS</span>
+    </div>
+    <div id="goal"></div>
+    <div id="buffs"></div>
+  </div>
+
+  <div class="hud-corner hud-tr">
+    <div class="panel-title">INFERRED STATE <span class="pi">π</span></div>
+    <div id="pi-bars"></div>
+    <div class="panel-title mt">VISUAL LATENTS <span class="pi">c</span></div>
+    <div id="c-bars"></div>
+  </div>
+
+  <div id="boss-wrap" class="hidden">
+    <div id="boss-label">BOSS</div>
+    <div class="bar bar-boss"><i id="boss-fill" class="fill boss"></i></div>
+  </div>
+
+  <div id="pickup-banner"></div>
+  <div id="hint" class="hidden"></div>
+  <div id="toasts"></div>
+</div>
+
+<!-- Outside #hud: the ribbon owns a reserved band that the canvas stops
+     above, so it never covers the playfield. -->
+<div id="ribbon-wrap">
+  <canvas id="ribbon"></canvas>
+  <div id="ribbon-legend"></div>
+</div>
+
+<!-- ══════════════════════════ TITLE ══════════════════════════ -->
+<section id="screen-title" class="screen">
+  <div class="title-block">
+    <h1>FLOW<span class="dash-sep">—</span><em>NEON ARENA</em></h1>
+    <p class="tagline">The arena reads how you play and reshapes itself around it.</p>
+
+    <div id="profile-card" class="hidden">
+      <div class="pc-label">YOU PLAY LIKE</div>
+      <div class="pc-arch" id="pc-arch">—</div>
+      <div class="pc-mix" id="pc-mix"></div>
+    </div>
+
+    <div class="press-any" id="press-any">press any key</div>
+
+    <div id="records-row" class="hidden">
+      <div class="rec"><b id="rec-best">0</b><span>BEST</span></div>
+      <div class="rec"><b id="rec-room">0</b><span>DEEPEST ROOM</span></div>
+      <div class="rec"><b id="rec-runs">0</b><span>RUNS</span></div>
+      <div class="rec"><b id="rec-ms">0/14</b><span>MILESTONES</span></div>
+    </div>
+
+    <div id="sparkline-wrap" class="hidden">
+      <div class="sub-label">LAST RUNS</div>
+      <canvas id="sparkline" width="420" height="46"></canvas>
+    </div>
+
+    <nav class="menu-actions">
+      <button class="btn primary" data-action="play">PLAY</button>
+      <button class="btn" data-action="how">HOW TO PLAY</button>
+      <button class="btn" data-action="settings">SETTINGS</button>
+      <button class="btn" data-action="milestones">MILESTONES</button>
+    </nav>
+    <p class="credit">
+      Ideated at 3AM by Atharv Sharma &amp; Shoyam Mishra ·
+      <a href="https://github.com/atharvgaur1845/flow_game" target="_blank" rel="noopener">source</a>
+    </p>
+  </div>
+</section>
+
+<!-- ══════════════════════════ SHOP ══════════════════════════ -->
+<section id="screen-shop" class="screen hidden">
+  <div class="modal">
+    <h2>SHOP</h2>
+    <p class="sub">Choose one. <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> or click.</p>
+    <div id="shop-cards"></div>
+    <div class="modal-foot"><span id="shop-meta"></span></div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ RUN REPORT ══════════════════════════ -->
+<section id="screen-report" class="screen hidden">
+  <div class="modal wide">
+    <h2 id="report-title">RUN OVER</h2>
+    <div id="report-verdict"></div>
+
+    <div class="report-grid">
+      <div class="rstat"><b id="r-score">0</b><span>SCORE</span><i id="r-score-cmp"></i></div>
+      <div class="rstat"><b id="r-room">0</b><span>ROOM</span></div>
+      <div class="rstat"><b id="r-kills">0</b><span>KILLS</span></div>
+      <div class="rstat"><b id="r-time">0s</b><span>SURVIVED</span></div>
+      <div class="rstat"><b id="r-flow">0.00</b><span>PEAK FLOW</span></div>
+      <div class="rstat"><b id="r-streak">0s</b><span>FLOW STREAK</span></div>
+    </div>
+
+    <div class="sub-label">HOW YOU PLAYED — π OVER THE WHOLE RUN</div>
+    <div id="report-strip"></div>
+    <div id="report-legend"></div>
+
+    <div class="modal-actions">
+      <button class="btn primary" data-action="again">RUN AGAIN <kbd>↵</kbd></button>
+      <button class="btn" data-action="copy-card">COPY RUN CARD</button>
+      <button class="btn" data-action="to-title">MENU</button>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ PAUSE ══════════════════════════ -->
+<section id="screen-pause" class="screen hidden">
+  <div class="modal narrow">
+    <h2>PAUSED</h2>
+    <div class="modal-actions col">
+      <button class="btn primary" data-action="resume">RESUME <kbd>ESC</kbd></button>
+      <button class="btn" data-action="settings">SETTINGS</button>
+      <button class="btn danger" data-action="abandon">ABANDON RUN</button>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ SETTINGS ══════════════════════════ -->
+<section id="screen-settings" class="screen hidden">
+  <div class="modal wide">
+    <h2>SETTINGS</h2>
+
+    <div class="settings-grid">
+      <div class="set-group">
+        <h3>AUDIO</h3>
+        <label class="row"><span>Music</span>
+          <input type="range" id="set-music" min="0" max="1" step="0.01"><output id="out-music"></output></label>
+        <label class="row"><span>Effects</span>
+          <input type="range" id="set-sfx" min="0" max="1" step="0.01"><output id="out-sfx"></output></label>
+        <label class="row"><span>Mute all <kbd>M</kbd></span>
+          <input type="checkbox" id="set-mute"></label>
+      </div>
+
+      <div class="set-group">
+        <h3>GRAPHICS</h3>
+        <label class="row"><span>Quality</span>
+          <select id="set-quality">
+            <option value="low">Low</option>
+            <option value="medium">Medium</option>
+            <option value="high">High</option>
+            <option value="ultra">Ultra</option>
+          </select></label>
+        <label class="row"><span>Auto-adjust to hold 60fps</span>
+          <input type="checkbox" id="set-autoscale"></label>
+        <div class="row static"><span>Render scale</span><output id="out-scale">100%</output></div>
+        <div class="row static"><span>Frame time</span><output id="out-fps">—</output></div>
+      </div>
+
+      <div class="set-group">
+        <h3>ACCESSIBILITY</h3>
+        <label class="row"><span>Reduced motion</span>
+          <input type="checkbox" id="set-motion"></label>
+        <p class="note">Disables screen shake, chromatic aberration, film grain and UV warp. The state colours still shift.</p>
+        <label class="row"><span>Colourblind-safe palette</span>
+          <input type="checkbox" id="set-cb"></label>
+        <label class="row"><span>Show π ribbon</span>
+          <input type="checkbox" id="set-ribbon"></label>
+      </div>
+
+      <div class="set-group">
+        <h3>CONTROLS</h3>
+        <div id="binds"></div>
+        <button class="btn small" data-action="reset-binds">RESET TO DEFAULTS</button>
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn primary" data-action="close-settings">DONE</button>
+      <button class="btn danger small" data-action="wipe">ERASE ALL LOCAL DATA</button>
+    </div>
+    <p class="note center" id="storage-note"></p>
+  </div>
+</section>
+
+<!-- ══════════════════════════ HOW TO PLAY ══════════════════════════ -->
+<section id="screen-how" class="screen hidden">
+  <div class="modal wide">
+    <h2>HOW TO PLAY</h2>
+    <div class="how-grid">
+      <div>
+        <h3>THE LOOP</h3>
+        <ul>
+          <li>Clear each room by hitting its kill quota before the timer runs out. Running out of time is death, not a pass.</li>
+          <li>Dashing makes you briefly invulnerable and leaves a <b>lethal trail</b> that keeps killing for 1.6s after the dash ends.</li>
+          <li>Every 3rd room opens a shop. Every 5th room is a boss — and <b>only dash damage hurts a boss</b>.</li>
+          <li>Grab the rotating diamonds: heal, haste, shield, longer dash, bonus max HP.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>THE ENGINE</h3>
+        <p>Five features of your play — speed, action rate, direction variance, threat proximity and idle time — are fed every tick to a non-causal attention model over a 32-frame window (16 real, 16 physics-projected).</p>
+        <p>It outputs <b>π</b>, a probability distribution over five psychological archetypes. π drives enemy speed and spawn mix, your friction, the camera zoom, every post-process effect, the boss's tactics — and the music.</p>
+        <p class="note">The weights here are the exact same tensors the desktop build ships with, so the browser infers identical state.</p>
+      </div>
+    </div>
+    <div id="how-archetypes"></div>
+    <div class="modal-actions">
+      <button class="btn primary" data-action="close-how">GOT IT</button>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ MILESTONES ══════════════════════════ -->
+<section id="screen-milestones" class="screen hidden">
+  <div class="modal wide">
+    <h2>MILESTONES</h2>
+    <div id="milestone-list"></div>
+    <div class="modal-actions">
+      <button class="btn primary" data-action="close-milestones">BACK</button>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════ UNSUPPORTED ══════════════════════════ -->
+<section id="screen-unsupported" class="screen hidden">
+  <div class="modal narrow">
+    <h2>WEBGL2 REQUIRED</h2>
+    <p class="sub" id="unsupported-detail">This browser could not create a WebGL2 context, so the arena cannot render.</p>
+    <p class="note">Try a current Chrome, Firefox, Edge or Safari 15+, and make sure hardware acceleration is enabled.</p>
+  </div>
+</section>
+
+<!-- ══════════════════════════ TOUCH ══════════════════════════ -->
+<div id="touch-layer" class="hidden">
+  <div id="touch-surface"></div>
+  <div id="stick"><i id="stick-knob"></i></div>
+  <button id="touch-dash">DASH</button>
+</div>
+
+<button id="quick-mute" title="Mute (M)" aria-label="Mute">♪</button>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

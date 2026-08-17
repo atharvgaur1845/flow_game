@@ -3,13 +3,31 @@
 ## **Ideated at 3AM by Atharv Sharma | Shoyam Mishra**
 ## **RL Agent authored by Atharv Sharma**
 
+### ▶ **[Play it in your browser — no install](https://atharvgaur1845.github.io/flow_game/)**
+
 ![Flow Game Gameplay](simplescreenrecorder-2026-04-20_04.16.07%20(online-video-cutter.com).gif)
 
-A 2D roguelite arena that **adapts in real-time to your psychological state** using a non-causal attention model and disentangled visual latents — and now ships with a **hierarchical reinforcement learning agent** that learns to play in any of the five psychological archetypes on command.
+A 2D roguelite arena that **adapts in real-time to your psychological state** using a non-causal attention model and disentangled visual latents. It ships three ways:
+
+| | What it is |
+|---|---|
+| **[Web build](https://atharvgaur1845.github.io/flow_game/)** | The whole game in a browser tab — WebGL2, procedural adaptive audio, everything saved locally. No install, no server. |
+| **Desktop build** | The original Python / PyTorch / OpenGL version. |
+| **RL agent** | A **hierarchical reinforcement learning agent** that learns to play in any of the five psychological archetypes on command. |
+
+> The web build is not a reimplementation. The attention weights are dumped straight from the PyTorch module (`torch.manual_seed(1337)`) into [docs/js/weights.js](docs/js/weights.js), so the browser infers the **same π** as the desktop game — verified to 1.4 × 10⁻⁷ by [tools/verify_port.mjs](tools/verify_port.mjs).
 
 ---
 
 ## 📋 Table of Contents
+
+### Web Build
+- [Play / Deploy](#-web-build)
+- [What the Web Build Adds](#-what-the-web-build-adds)
+- [Adaptive Score](#-the-adaptive-score)
+- [Local Data](#-local-data)
+- [Web Architecture](#-web-architecture)
+- [Verifying the Port](#-verifying-the-port)
 
 ### Game
 - [Overview](#-overview)
@@ -36,6 +54,157 @@ A 2D roguelite arena that **adapts in real-time to your psychological state** us
 - [RL Configuration](#-rl-configuration)
 - [Troubleshooting](#-troubleshooting)
 
+---
+
+# PART 0 — THE WEB BUILD
+
+---
+
+## 🌐 Web Build
+
+The entire game runs in a browser tab: WebGL2 for the arena, the attention model in plain JavaScript, and a fully synthesised soundtrack. **No build step, no bundler, no dependencies, no server** — `docs/` is 224 KB of static files and there is not a single asset to download.
+
+### Play
+
+**<https://atharvgaur1845.github.io/flow_game/>**
+
+### Deploy it yourself
+
+Settings → Pages → Source: *Deploy from a branch* → Branch: `main`, folder: **`/docs`**. That is the whole deployment.
+
+### Run it locally
+
+ES modules need a real origin, so `file://` will not work:
+
+```bash
+cd docs && python3 -m http.server 8000
+# then open http://localhost:8000
+```
+
+Append `?debug` to the URL to expose the live game object as `window.__flow`.
+
+### Requirements
+
+WebGL2 (Chrome/Edge 56+, Firefox 51+, Safari 15+). The page detects a missing context and says so instead of showing a black screen.
+
+---
+
+## ✨ What the Web Build Adds
+
+Everything below is additive — the simulation itself is a faithful port, tick for tick.
+
+| Feature | Why |
+|---------|-----|
+| **Attract mode** | The title screen is a live game. A scripted autopilot sweeps deliberately through all five archetypes, so the arena visibly changes colour and the music changes character before you press anything. |
+| **π ribbon** | A scrolling stacked-area river of your last 20 seconds of inferred state, in its own band below the arena. Five bars give you a number; the ribbon gives you the shape of the fight. |
+| **Diegetic dash ring** | The dash cooldown orbits the player and flares when it lands, instead of living in a corner bar you have no spare attention for. |
+| **Low-HP vignette** | Pulses in time with the heartbeat cue. |
+| **Off-screen threat markers** | At Flow's 1.2× zoom a real slice of the arena sits outside the frustum, so enemies out there ride the screen edge. |
+| **Contextual onboarding** | Movement keys fade in until you move; the dash prompt appears the first time something gets close and never again. No tutorial, no wall of text. |
+| **Run report** | Your whole run's π rendered as one image — a fingerprint of how it actually felt — plus score vs. your own median, and a Wordle-style **run card** for the clipboard. |
+| **Psych profile** | Lifetime seconds per archetype across every session you have ever played, surfaced on the menu as *"You play like: TACTICAL."* |
+| **Milestones** | 14 one-shot achievements as neon toasts mid-run. |
+| **Accessibility** | Reduced motion (kills shake, aberration, grain and warp), a colourblind-safe Okabe-Ito palette, split music/SFX volume, rebindable keys. |
+| **Touch controls** | A floating thumbstick that origins wherever your thumb lands, plus a dash pad. |
+| **Auto quality** | Frame cost is measured continuously and render resolution is trimmed before anything stutters, with a manual Low/Medium/High/Ultra override. |
+
+### Fixed-timestep simulation
+
+The desktop build steps once per rendered frame at up to 144 Hz, and several gameplay lerps (enemy steering, APM decay, the EMA baseline) are *per-frame* rather than per-second. Browsers hand you anything from 30 to 240 Hz, so the web build runs the simulation on a fixed **120 Hz tick** with free-running rendering. A 60 Hz laptop and a 240 Hz monitor play the same game.
+
+---
+
+## 🎵 The Adaptive Score
+
+There are no audio files. Every sound is synthesised at runtime through the Web Audio API — which is also why the page loads instantly and works offline once cached.
+
+The music is not a loop with a filter on it. Five musical identities are **crossfaded continuously by π**, the same mixture that drives the physics and the shader. Tempo, scale, timbre, filter cutoff, reverb length and note density are all functions of your inferred psychological state:
+
+| State | Musical identity |
+|-------|-----------------|
+| **Arousal** | Phrygian, 150 BPM driving pulse, saw lead, filter wide open |
+| **Tactical** | Bare fourths, 110 BPM, metronomic, tight room |
+| **Overload** | Tritone cluster, 132 BPM, heavy detune, stuttering hats |
+| **Flow** | Sus2 pads, 96 BPM, long reverb, patient arp |
+| **Apathy** | Minor triad, 60 BPM, everything lowpassed to a murmur |
+
+The dominant archetype selects the scale, but only after it has held for ~1.2 s — otherwise the melody rewrites itself several times a second. Everything else blends smoothly. Taking damage sidechain-ducks the whole bed.
+
+On top of that sits a full effects layer: dash whoosh, per-enemy-type kill blips, damage thud, five distinct pickup arpeggios, an FM-synthesised boss clang, room-clear chord, dash-ready click and a low-HP heartbeat.
+
+**Audio unlocks on the same keypress that starts your first run** — which is why there is no "click to enable sound" nag anywhere in the UI.
+
+---
+
+## 💾 Local Data
+
+`localStorage` is the entire backend. Nothing is uploaded, there is no analytics, and there is no network request after the page loads.
+
+| Namespace | Contents |
+|-----------|----------|
+| `settings` | Volumes, mute, quality, auto-scale, reduced motion, colourblind palette, keybinds |
+| `records` | Best score, deepest room, lifetime kills, runs played, seconds played, bosses, longest Flow streak |
+| `profile` | Lifetime seconds accumulated in each of the five archetypes |
+| `runs` | Last 20 run summaries — feeds the menu sparkline and the "vs. median" comparison |
+| `seen` | One-shot flags: onboarding hints and unlocked milestones |
+
+All of it is stored under one versioned key (`flow.web.v1`), and **Settings → Erase All Local Data** wipes it. If the browser blocks storage (private mode, embedded contexts) the game plays normally and says so in Settings.
+
+---
+
+## 🏗️ Web Architecture
+
+```
+docs/
+├── index.html            ← page shell: HUD, screens, touch layer
+├── style.css             ← single stylesheet, no external fonts
+└── js/
+    ├── main.js           ← entry point, fixed-timestep loop, state machine
+    ├── config.js         ← port of game/config.py + backend symbols
+    ├── weights.js        ← AUTO-GENERATED tensors dumped from PyTorch
+    ├── inference.js      ← AttentionStateInference / EnvironmentMapper / ObservationBuilder
+    ├── entities.js       ← port of game/entities_extra.py
+    ├── progression.js    ← port of game/progression.py
+    ├── player.js         ← Player dataclass + game/abilities.py
+    ├── renderer.js       ← WebGL2, GLSL ES 3.00 port of the fragment shader
+    ├── audio.js          ← procedural SFX + the π-driven adaptive score
+    ├── ribbon.js         ← the π ribbon (live strip + run fingerprint)
+    ├── hud.js            ← in-run HUD
+    ├── ui.js             ← title, shop, report, settings, milestones
+    ├── input.js          ← rebindable keyboard + touch
+    ├── storage.js        ← localStorage persistence
+    ├── milestones.js     ← achievement definitions
+    └── runcard.js        ← shareable run card
+```
+
+The **same layer contract** as the desktop build holds: `inference.js` is the backend and is never written to by gameplay; everything else only *reads* π, E and c.
+
+---
+
+## 🔬 Verifying the Port
+
+The web build's inference is not a lookalike — it is the same model, and that is checked rather than asserted.
+
+```bash
+# Regenerate the weights from the live PyTorch modules
+python3 tools/dump_weights.py > docs/js/weights.js
+
+# Prove the JS matches torch on a 120-frame golden trace
+python3 tools/dump_trace.py > /tmp/trace.json
+node tools/verify_port.mjs /tmp/trace.json
+#   frames        : 120
+#   max |dpi|     : 1.398e-7
+#   OK — JS inference matches the torch backend.
+
+# Headless smoke test of the whole ported game loop
+node tools/sim_smoke.mjs
+```
+
+`max |dπ| = 1.4e-7` is float32-vs-float64 noise; there is no algorithmic drift.
+
+`sim_smoke.mjs` runs the ported simulation with a scripted player and asserts the same invariants `flow_game.py --probe` does (π on the simplex, E and c finite) plus gameplay ones: the arena is inescapable, the enemy and trail caps hold, rooms advance, bosses spawn on room 5, and shops never offer duplicates.
+
+---
 ---
 
 # PART I — THE GAME
@@ -128,6 +297,8 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 ---
 
 ## 🚀 Quick Start
+
+> Nothing to install if you just want to play: **<https://atharvgaur1845.github.io/flow_game/>**
 
 ```bash
 # Fullscreen (default)
@@ -271,6 +442,12 @@ flow_game/
 │   ├── entities_extra.py ← Enemy, Boss, Pickup dataclasses + AI
 │   ├── progression.py    ← RunState, room scaling, shop, scoring
 │   └── ui.py             ← HUD, shop menu, game-over overlay
+├── docs/                 ← The web build (GitHub Pages root) — see Part 0
+├── tools/                ← Weight dumping + port verification
+│   ├── dump_weights.py   ← PyTorch tensors -> docs/js/weights.js
+│   ├── dump_trace.py     ← Golden (o_t -> pi) trace from the torch backend
+│   ├── verify_port.mjs   ← Asserts the JS port matches torch
+│   └── sim_smoke.mjs     ← Headless smoke test of the ported game loop
 └── rl_agent/             ← See Part II
 ```
 
